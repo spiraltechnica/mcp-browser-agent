@@ -1,0 +1,264 @@
+require('dotenv').config();
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
+
+const app = express();
+
+// Enhanced CORS configuration
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  credentials: true
+}));
+
+app.use(express.json({ limit: '10mb' }));
+
+// Validate environment variables
+if (!process.env.OPENAI_API_KEY) {
+  console.error("❌ OPENAI_API_KEY environment variable is required");
+  process.exit(1);
+}
+
+// Helper function to extract JSON from text
+function extractJSONFromText(text) {
+  // Try to find JSON in markdown code blocks
+  const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1]);
+    } catch (e) {
+      // Continue to other methods
+    }
+  }
+  
+  // Try to find JSON object in text
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      // Continue to fallback
+    }
+  }
+  
+  // Fallback decision
+  return {
+    action: "tool",
+    tool: "list_tools",
+    params: {},
+    delay: 3000,
+    reasoning: "Fallback decision due to JSON parsing failure"
+  };
+}
+
+// Enhanced LLM proxy endpoint with detailed logging
+app.post("/api/llm", async (req, res) => {
+  const { prompt, messages, mode } = req.body;
+  const requestId = Math.random().toString(36).substr(2, 9);
+  const startTime = Date.now();
+  
+  console.log(`\n🚀 [${requestId}] === NEW LLM REQUEST ===`);
+  console.log(`🔑 [${requestId}] API Key configured: ${process.env.OPENAI_API_KEY ? 'Yes (***' + process.env.OPENAI_API_KEY.slice(-4) + ')' : 'No'}`);
+
+  let requestPayload;
+
+  // Handle new message-based requests (enhanced system)
+  if (messages && Array.isArray(messages)) {
+    console.log(`📝 [${requestId}] Message-based request with ${messages.length} messages`);
+    console.log(`📝 [${requestId}] Messages:`, JSON.stringify(messages, null, 2));
+    
+    requestPayload = {
+      model: "gpt-4.1-mini",
+      messages: messages,
+      temperature: 0.3,
+      max_tokens: 1000,
+      // Don't force JSON format for conversational responses
+    };
+  }
+  // Handle legacy prompt-based requests (old autonomous system)
+  else if (prompt && typeof prompt === 'string') {
+    console.log(`📝 [${requestId}] Legacy prompt-based request`);
+    console.log(`📝 [${requestId}] Prompt length: ${prompt.length} characters`);
+    console.log(`📝 [${requestId}] Full prompt:\n${prompt}`);
+    
+    requestPayload = {
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are an intelligent agent that responds with valid JSON decisions. Always respond with properly formatted JSON that matches the requested schema. Be concise and decisive."
+        },
+        {
+          role: "user", 
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 300,
+      response_format: { type: "json_object" }
+    };
+  }
+  // Invalid request
+  else {
+    console.log(`❌ [${requestId}] Invalid request: either 'messages' array or 'prompt' string is required`);
+    return res.status(400).json({ 
+      error: "Invalid request: either 'messages' array or 'prompt' string is required" 
+    });
+  }
+
+  console.log(`⚙️ [${requestId}] Request config:`, {
+    model: requestPayload.model,
+    temperature: requestPayload.temperature,
+    max_tokens: requestPayload.max_tokens,
+    response_format: requestPayload.response_format,
+    messages_count: requestPayload.messages.length
+  });
+
+  try {
+    console.log(`🌐 [${requestId}] Sending request to OpenAI...`);
+    
+    const response = await axios.post("https://api.openai.com/v1/chat/completions", requestPayload, {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      timeout: 30000 // 30 second timeout
+    });
+
+    const responseTime = Date.now() - startTime;
+    const reply = response.data.choices[0].message.content;
+    const usage = response.data.usage;
+
+    console.log(`✅ [${requestId}] OpenAI Response received in ${responseTime}ms`);
+    console.log(`📊 [${requestId}] Token usage:`, {
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+      total_tokens: usage.total_tokens
+    });
+    console.log(`🤖 [${requestId}] Raw response:\n${reply}`);
+    
+    // Handle message-based requests (enhanced system) - return raw response
+    if (messages && Array.isArray(messages)) {
+      console.log(`💬 [${requestId}] Returning conversational response`);
+      console.log(`⏱️ [${requestId}] Total request time: ${responseTime}ms\n`);
+      
+      // Return the raw response for conversational chat
+      res.json({
+        content: reply,
+        usage: usage,
+        model: response.data.model,
+        finish_reason: response.data.choices[0].finish_reason
+      });
+      return;
+    }
+    
+    // Handle legacy prompt-based requests (old autonomous system) - parse JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(reply);
+      console.log(`✅ [${requestId}] JSON parsed successfully:`, parsed);
+    } catch (parseError) {
+      console.log(`⚠️ [${requestId}] JSON parse failed: ${parseError.message}`);
+      console.log(`🔧 [${requestId}] Attempting JSON extraction...`);
+      parsed = extractJSONFromText(reply);
+      console.log(`🔧 [${requestId}] Extracted JSON:`, parsed);
+    }
+    
+    // Validate the parsed response has required fields
+    if (!parsed.action) {
+      console.log(`⚠️ [${requestId}] Response missing action field, using fallback`);
+      parsed = {
+        action: "tool",
+        tool: "list_tools",
+        params: {},
+        delay: 3000,
+        reasoning: "Fallback due to missing action field"
+      };
+    }
+    
+    console.log(`🎯 [${requestId}] Final decision:`, parsed);
+    console.log(`⏱️ [${requestId}] Total request time: ${responseTime}ms\n`);
+    
+    res.json(parsed);
+    
+  } catch (err) {
+    const responseTime = Date.now() - startTime;
+    console.error(`\n❌ [${requestId}] === LLM API ERROR ===`);
+    console.error(`❌ [${requestId}] Error after ${responseTime}ms:`, err.message);
+    
+    // Detailed error logging
+    if (err.response) {
+      console.error(`❌ [${requestId}] HTTP Status: ${err.response.status}`);
+      console.error(`❌ [${requestId}] Response headers:`, err.response.headers);
+      console.error(`❌ [${requestId}] Response data:`, err.response.data);
+      
+      if (err.response.data?.error) {
+        console.error(`❌ [${requestId}] OpenAI Error Details:`, {
+          type: err.response.data.error.type,
+          code: err.response.data.error.code,
+          message: err.response.data.error.message
+        });
+      }
+    } else if (err.request) {
+      console.error(`❌ [${requestId}] No response received:`, err.request);
+    } else {
+      console.error(`❌ [${requestId}] Request setup error:`, err.message);
+    }
+    
+    // Provide detailed error information
+    let errorDetails = err.message;
+    if (err.response) {
+      const openaiError = err.response.data?.error;
+      if (openaiError) {
+        errorDetails = `OpenAI API Error: ${openaiError.message} (${openaiError.type})`;
+      } else {
+        errorDetails = `HTTP ${err.response.status}: ${err.response.statusText}`;
+      }
+    } else if (err.code === 'ECONNABORTED') {
+      errorDetails = "Request timeout - OpenAI API took too long to respond";
+    } else if (err.code === 'ENOTFOUND') {
+      errorDetails = "Network error - Unable to reach OpenAI API";
+    }
+    
+    console.error(`❌ [${requestId}] Final error: ${errorDetails}\n`);
+    
+    // Return a fallback decision instead of just an error
+    res.status(500).json({
+      error: errorDetails,
+      requestId: requestId,
+      responseTime: responseTime,
+      fallback: {
+        action: "stop",
+        reasoning: `LLM API error: ${errorDetails}`
+      }
+    });
+  }
+});
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "healthy", 
+    timestamp: new Date().toISOString(),
+    openai_configured: !!process.env.OPENAI_API_KEY
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ 
+    error: "Internal server error",
+    fallback: {
+      action: "stop",
+      reasoning: "Server error occurred"
+    }
+  });
+});
+
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`🚀 MCP backend running on http://localhost:${PORT}`);
+  console.log(`✅ OpenAI API key configured: ${process.env.OPENAI_API_KEY ? 'Yes' : 'No'}`);
+});
