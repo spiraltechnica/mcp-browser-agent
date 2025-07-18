@@ -1,6 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { startAgent, stopAgent, getAgentStats, isAgentRunning } from "./agent";
-import { BrowserMCPServer } from "./mcp-server";
 import { 
   startEnhancedAgent, 
   stopEnhancedAgent, 
@@ -31,7 +29,6 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState<AgentStats | null>(null);
   const [tools, setTools] = useState<MCPToolInfo[]>([]);
-  const [mcpServer] = useState(() => new BrowserMCPServer());
   const [chatInput, setChatInput] = useState<string>("");
   const [chatHistory, setChatHistory] = useState<Array<{role: 'user' | 'assistant', content: string, timestamp: string}>>([]);
   const [isProcessingChat, setIsProcessingChat] = useState(false);
@@ -206,18 +203,15 @@ function App() {
   // Update stats and running status periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      // Check both old and new agent systems
-      const oldRunning = isAgentRunning();
-      const newRunning = isEnhancedAgentRunning();
-      const running = oldRunning || newRunning;
+      // Check enhanced agent system only
+      const running = isEnhancedAgentRunning();
       
       setIsRunning(running);
       
       if (running) {
-        // Prefer enhanced agent stats if available
+        // Get enhanced agent stats
         const enhancedStats = getEnhancedAgentStats();
-        const oldStats = getAgentStats();
-        setStats(enhancedStats || oldStats);
+        setStats(enhancedStats);
       } else {
         setStats(null);
       }
@@ -230,20 +224,12 @@ function App() {
   useEffect(() => {
     const loadTools = async () => {
       try {
-        // Try enhanced server first, fallback to old server
+        // Use enhanced server only
         const enhancedServer = getEnhancedMCPServer();
-        try {
-          await enhancedServer.initialize();
-          const availableTools = await enhancedServer.listTools();
-          setTools(availableTools);
-          addLog("✅ Enhanced tools loaded successfully");
-        } catch (enhancedError) {
-          console.warn('Enhanced server failed, falling back to old server:', enhancedError);
-          await mcpServer.initialize();
-          const availableTools = await mcpServer.listTools();
-          setTools(availableTools);
-          addLog("✅ Fallback tools loaded successfully");
-        }
+        await enhancedServer.initialize();
+        const availableTools = await enhancedServer.listTools();
+        setTools(availableTools);
+        addLog("✅ Enhanced tools loaded successfully");
       } catch (error) {
         console.error('Failed to load tools:', error);
         addLog(`❌ Failed to load tools: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -251,7 +237,7 @@ function App() {
     };
 
     loadTools();
-  }, [mcpServer, addLog]);
+  }, [addLog]);
 
   return (
     <div style={{ 

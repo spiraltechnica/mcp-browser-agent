@@ -3,7 +3,7 @@
  * Similar to the Python implementation's tool management approach
  */
 
-import { Tool, ToolResult, ToolExecutionError } from './Tool';
+import { Tool, ToolResult } from './Tool';
 import { getConfig } from '../config/Configuration';
 
 export interface ToolInfo {
@@ -28,8 +28,7 @@ export class ToolManager {
   }> = [];
 
   constructor() {
-    // Initialize with configuration
-    const config = getConfig();
+    // Initialize execution history
     this.executionHistory = [];
   }
 

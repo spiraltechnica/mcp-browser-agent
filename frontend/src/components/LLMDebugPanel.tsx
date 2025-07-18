@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { LLMDebugInfo } from '../llm/LLMClient';
 
 interface LLMDebugPanelProps {
@@ -122,7 +122,7 @@ export function LLMDebugPanel({ debugHistory, isVisible, onToggle }: LLMDebugPan
                   Recent Requests
                 </h3>
                 <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-                  {debugHistory.slice().reverse().map((debugInfo, index) => (
+                  {debugHistory.slice().reverse().map((debugInfo) => (
                     <div
                       key={debugInfo.id}
                       style={{

@@ -4,7 +4,7 @@
  */
 
 import { ToolManager } from '../tools/ToolManager';
-import { LLMClient, Message, LLMError } from '../llm/LLMClient';
+import { LLMClient, Message } from '../llm/LLMClient';
 import { getConfig } from '../config/Configuration';
 
 export interface SessionContext {

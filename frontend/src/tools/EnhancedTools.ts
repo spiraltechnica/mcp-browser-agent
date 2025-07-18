@@ -3,7 +3,7 @@
  * Converts existing tools to use the new architecture
  */
 
-import { Tool, createTool, ToolResult } from './Tool';
+import { createTool, ToolResult } from './Tool';
 
 // Simple safe math expression evaluator (reused from original)
 class SafeMathEvaluator {
@@ -377,7 +377,7 @@ export const listToolsTool = createTool(
     properties: {},
     required: []
   },
-  async (args: any): Promise<ToolResult> => {
+  async (): Promise<ToolResult> => {
     // This will be populated by the ToolManager when tools are registered
     return {
       success: true,

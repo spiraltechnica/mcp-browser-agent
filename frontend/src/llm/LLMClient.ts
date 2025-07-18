@@ -359,21 +359,6 @@ export class LLMClient {
     }
   }
 
-  /**
-   * Build a prompt string from messages array for backend compatibility
-   */
-  private buildPromptFromMessages(messages: Message[]): string {
-    return messages.map(msg => {
-      if (msg.role === 'system') {
-        return `System: ${msg.content}`;
-      } else if (msg.role === 'user') {
-        return `User: ${msg.content}`;
-      } else if (msg.role === 'assistant') {
-        return `Assistant: ${msg.content}`;
-      }
-      return msg.content;
-    }).join('\n\n');
-  }
 
   /**
    * Extract content from LLM response
