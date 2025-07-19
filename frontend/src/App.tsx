@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   startEnhancedAgent, 
   stopEnhancedAgent, 
@@ -9,6 +9,7 @@ import {
 import { getEnhancedMCPServer } from "./server/EnhancedMCPServer";
 import { getLLMClient, LLMDebugInfo } from "./llm/LLMClient";
 import { LLMDebugPanel } from "./components/LLMDebugPanel";
+import MultiAgentInterface from "./components/MultiAgentInterface";
 
 interface AgentStats {
   isRunning: boolean;
@@ -25,6 +26,7 @@ interface MCPToolInfo {
 }
 
 function App() {
+  const [useMultiAgent, setUseMultiAgent] = useState(false);
   const [log, setLog] = useState<string>("");
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState<AgentStats | null>(null);
@@ -239,6 +241,11 @@ function App() {
     loadTools();
   }, [addLog]);
 
+  // If multi-agent mode is enabled, render the MultiAgentInterface
+  if (useMultiAgent) {
+    return <MultiAgentInterface onSwitchToSingleAgent={() => setUseMultiAgent(false)} />;
+  }
+
   return (
     <div style={{ 
       fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -247,25 +254,52 @@ function App() {
       padding: '20px'
     }}>
       <header style={{ marginBottom: '30px' }}>
-        <h1 style={{ 
-          color: '#2563eb',
-          marginBottom: '10px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'flex-start',
+          marginBottom: '10px'
         }}>
-          🤖 MCP Browser Agent
-          <span style={{
-            fontSize: '14px',
-            padding: '4px 8px',
-            borderRadius: '12px',
-            backgroundColor: isRunning ? '#10b981' : '#6b7280',
-            color: 'white',
-            fontWeight: 'normal'
+          <h1 style={{ 
+            color: '#2563eb',
+            margin: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
           }}>
-            {isRunning ? 'RUNNING' : 'STOPPED'}
-          </span>
-        </h1>
+            🤖 MCP Browser Agent
+            <span style={{
+              fontSize: '14px',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              backgroundColor: isRunning ? '#10b981' : '#6b7280',
+              color: 'white',
+              fontWeight: 'normal'
+            }}>
+              {isRunning ? 'RUNNING' : 'STOPPED'}
+            </span>
+          </h1>
+          
+          {/* Mode Toggle Button */}
+          <button
+            onClick={() => setUseMultiAgent(!useMultiAgent)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#6366f1',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            🔄 Switch to Multi-Agent Mode
+          </button>
+        </div>
         <p style={{ color: '#6b7280', margin: 0 }}>
           An intelligent agent that uses MCP tools to interact with the browser
         </p>
