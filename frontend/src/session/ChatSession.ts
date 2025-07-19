@@ -4,7 +4,7 @@
  */
 
 import { ToolManager } from '../tools/ToolManager';
-import { LLMClient, Message } from '../llm/LLMClient';
+import { LLMClient, Message, ToolCall } from '../llm/LLMClient';
 import { getConfig } from '../config/Configuration';
 
 export interface SessionContext {
@@ -102,12 +102,19 @@ export class ChatSession {
         content: userMessage
       });
 
-      // Get LLM response
-      const llmResponse = await this.llmClient.getResponse(this.context.messages);
-      this.log(`🤖 LLM Response: ${llmResponse.content}`);
+      // Get ALL tools for MCP standard format - LLM decides which to use
+      const tools = this.toolManager.getToolsForMCP();
+      const llmResponse = await this.llmClient.getResponse(this.context.messages, {
+        tools: tools.length > 0 ? tools : undefined
+      });
+      
+      this.log(`🤖 LLM Response: ${llmResponse.content || 'Tool calls detected'}`);
+      if (llmResponse.tool_calls && llmResponse.tool_calls.length > 0) {
+        this.log(`🔧 Tool calls: ${llmResponse.tool_calls.length}`);
+      }
 
-      // Process the response (check for tool calls)
-      const result = await this.processLLMResponse(llmResponse.content);
+      // Process the response (handle both content and tool calls)
+      const result = await this.processLLMResponseMCP(llmResponse);
 
       // Add final response to context
       this.context.messages.push({
@@ -134,82 +141,87 @@ export class ChatSession {
   }
 
   /**
-   * Process LLM response and execute tools if needed
-   * Similar to Python's process_llm_response method
+   * Process LLM response using MCP standard format
    */
-  private async processLLMResponse(llmResponse: string): Promise<string> {
+  private async processLLMResponseMCP(llmResponse: { content: string | null; tool_calls?: ToolCall[] }): Promise<string> {
     try {
-      // Check if this is a tool call
-      const toolCall = this.llmClient.parseToolCall(llmResponse);
-      
-      if (toolCall.isToolCall && toolCall.tool && toolCall.arguments) {
-        this.log(`🔧 Tool call detected: ${toolCall.tool}`);
-        this.log(`📝 Arguments: ${JSON.stringify(toolCall.arguments)}`);
-
-        // Execute the tool
-        const toolResult = await this.toolManager.executeTool(toolCall.tool, toolCall.arguments);
+      // If there are tool calls, execute them
+      if (llmResponse.tool_calls && llmResponse.tool_calls.length > 0) {
+        this.log(`🔧 Processing ${llmResponse.tool_calls.length} tool calls`);
         
-        if (toolResult.success) {
-          this.log(`✅ Tool execution successful`);
-          this.log(`📊 Tool result: ${JSON.stringify(toolResult.data, null, 2)}`);
-          this.context.lastToolResults.set(toolCall.tool, toolResult.data);
-          
-          // Add tool result to conversation and get natural response
-          this.context.messages.push({
-            role: 'assistant',
-            content: llmResponse
-          });
-          
-          this.context.messages.push({
-            role: 'system',
-            content: `Tool execution result: ${JSON.stringify(toolResult.data)}
+        // Add assistant message with tool calls to conversation
+        this.context.messages.push({
+          role: 'assistant',
+          content: llmResponse.content,
+          tool_calls: llmResponse.tool_calls
+        });
 
-Based on this tool result, determine if you need to continue with more actions to complete the user's request, or if you should provide a final conversational response.
-
-If you need to continue with more actions (like more calculations, storing data, etc.), respond with ONLY the next tool call in JSON format.
-If the task is complete, provide a natural conversational response summarizing what you accomplished.
-If you find yourself getting the same error message from the tool use 3 times in a row, report back details of this result with a final conversational response.`
-          });
-
-          // Get next response (could be another tool call or final response)
-          const nextResponse = await this.llmClient.getResponse(this.context.messages, {
-            responseFormat: undefined // Allow both JSON tools and natural responses
-          });
-          this.log(`🔄 Next response: ${nextResponse.content}`);
+        // Execute each tool call and add tool messages
+        for (const toolCall of llmResponse.tool_calls) {
+          this.log(`🔧 Executing tool: ${toolCall.function.name}`);
           
-          // Check if the next response is another tool call
-          const nextToolCall = this.llmClient.parseToolCall(nextResponse.content);
-          if (nextToolCall.isToolCall) {
-            // Recursively process the next tool call
-            this.log(`🔁 Continuing with next tool call...`);
-            return await this.processLLMResponse(nextResponse.content);
-          } else {
-            // Final conversational response
-            return nextResponse.content;
+          let arguments_: any;
+          try {
+            arguments_ = JSON.parse(toolCall.function.arguments);
+          } catch (error) {
+            this.log(`❌ Failed to parse tool arguments: ${toolCall.function.arguments}`);
+            arguments_ = {};
           }
+
+          const toolResult = await this.toolManager.executeTool(toolCall.function.name, arguments_);
+          
+          // Create tool message
+          const toolMessage = this.llmClient.createToolMessage(
+            toolCall.id,
+            toolCall.function.name,
+            toolResult.success ? JSON.stringify(toolResult.data) : `Error: ${toolResult.error}`
+          );
+          
+          this.context.messages.push(toolMessage);
+          
+          if (toolResult.success) {
+            this.log(`✅ Tool execution successful: ${toolCall.function.name}`);
+            this.context.lastToolResults.set(toolCall.function.name, toolResult.data);
+          } else {
+            this.log(`❌ Tool execution failed: ${toolCall.function.name} - ${toolResult.error}`);
+          }
+        }
+
+        // Get final response from LLM after tool execution
+        const tools = this.toolManager.getToolsForMCP();
+        const finalResponse = await this.llmClient.getResponse(this.context.messages, {
+          tools: tools.length > 0 ? tools : undefined
+        });
+
+        this.log(`🔄 Final response: ${finalResponse.content || 'Additional tool calls detected'}`);
+
+        // Check if there are more tool calls
+        if (finalResponse.tool_calls && finalResponse.tool_calls.length > 0) {
+          // Recursively process more tool calls
+          return await this.processLLMResponseMCP(finalResponse);
         } else {
-          this.log(`❌ Tool execution failed: ${toolResult.error}`);
-          return `I tried to use the ${toolCall.tool} tool, but it failed: ${toolResult.error}`;
+          // Return final content
+          return finalResponse.content || 'Task completed successfully.';
         }
       }
 
-      // Not a tool call, return the response directly
-      return llmResponse;
+      // No tool calls, return content directly
+      return llmResponse.content || 'No response content available.';
 
     } catch (error) {
-      this.log(`❌ Error processing LLM response: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return llmResponse; // Fallback to original response
+      this.log(`❌ Error processing MCP response: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return llmResponse.content || 'An error occurred while processing the response.';
     }
   }
+
 
   /**
    * Build system prompt with tool information
    * Similar to Python's system message building
    */
   private buildSystemPrompt(): string {
-    const toolsDescription = this.toolManager.formatAllToolsForLLM();
-    
-    return this.llmClient.buildSystemPrompt(toolsDescription);
+    // Use MCP standard format - tools are provided in the tools array, not in system prompt
+    return this.toolManager.buildMCPSystemPrompt();
   }
 
   /**
@@ -346,6 +358,7 @@ If you find yourself getting the same error message from the tool use 3 times in
     
     this.log("🔄 System prompt updated with current tools");
   }
+
 
   /**
    * Get session context summary

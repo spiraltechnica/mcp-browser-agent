@@ -94,7 +94,6 @@ export class Configuration {
       model: "gpt-4.1-mini",
       temperature: 0.3,
       maxTokens: 1000,
-      responseFormat: { type: "json_object" },
       timeout: 30000
     };
   }

@@ -5,13 +5,26 @@
 
 import { getConfig, ConfigurationError } from '../config/Configuration';
 
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string; // JSON string
+  };
+}
+
 export interface Message {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  name?: string; // For tool messages
 }
 
 export interface LLMResponse {
-  content: string;
+  content: string | null;
+  tool_calls?: ToolCall[];
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -42,6 +55,15 @@ export interface LLMDebugInfo {
   };
 }
 
+export interface MCPTool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: any; // JSON Schema
+  };
+}
+
 export interface LLMRequestOptions {
   messages: Message[];
   temperature?: number;
@@ -49,6 +71,8 @@ export interface LLMRequestOptions {
   model?: string;
   responseFormat?: { type: string };
   timeout?: number;
+  tools?: MCPTool[];
+  tool_choice?: "auto" | "none" | { type: "function"; function: { name: string } };
 }
 
 /**
@@ -129,8 +153,10 @@ export class LLMClient {
         temperature: options?.temperature ?? llmConfig.temperature,
         maxTokens: options?.maxTokens ?? llmConfig.maxTokens,
         model: options?.model ?? llmConfig.model,
-        responseFormat: options?.responseFormat ?? llmConfig.responseFormat,
-        timeout: options?.timeout ?? llmConfig.timeout
+        responseFormat: options?.responseFormat,
+        timeout: options?.timeout ?? llmConfig.timeout,
+        tools: options?.tools,
+        tool_choice: options?.tool_choice
       };
 
       console.log(`🚀 [${requestId}] LLM Request started`);
@@ -170,21 +196,37 @@ export class LLMClient {
     
     // Prepare request payload for backend (using messages array)
     // Create a deep copy to avoid reference issues in debug history
-    const payload = {
+    const payload: any = {
       messages: JSON.parse(JSON.stringify(options.messages)), // Deep copy of messages
       model: options.model,
       temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      response_format: options.responseFormat
+      max_tokens: options.maxTokens
     };
+
+    // Only add response_format if explicitly provided
+    if (options.responseFormat) {
+      payload.response_format = options.responseFormat;
+    }
+
+    // Add tools array if provided
+    if (options.tools && options.tools.length > 0) {
+      payload.tools = options.tools;
+      payload.tool_choice = options.tool_choice || "auto";
+    }
 
     console.log(`🌐 [${requestId}] Sending request to backend ${apiConfig.llmEndpoint}`);
     console.log(`⚙️ [${requestId}] Request config:`, {
       model: payload.model,
       temperature: payload.temperature,
       max_tokens: payload.max_tokens,
-      messages_count: payload.messages.length
+      messages_count: payload.messages.length,
+      tools_count: payload.tools ? payload.tools.length : 0,
+      tool_choice: payload.tool_choice
     });
+    
+    if (payload.tools && payload.tools.length > 0) {
+      console.log(`🔧 [${requestId}] Tools available:`, payload.tools.map((t: any) => t.function.name));
+    }
 
     try {
       // Create abort controller for timeout
@@ -256,7 +298,8 @@ export class LLMClient {
       console.log(`📥 [${requestId}] Raw response length: ${responseText.length} characters`);
 
       // Try to parse as JSON first (for structured responses)
-      let content: string;
+      let content: string | null = null;
+      let tool_calls: ToolCall[] | undefined = undefined;
       let usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
       let responsePayload: any;
       
@@ -268,8 +311,10 @@ export class LLMClient {
           console.warn(`🔄 [${requestId}] Using backend fallback response`);
           content = JSON.stringify(responsePayload.fallback);
         } else {
-          // Extract content from structured response
-          content = this.extractContent(responsePayload);
+          // Extract content and tool_calls from structured response
+          const extracted = this.extractContentAndToolCalls(responsePayload);
+          content = extracted.content;
+          tool_calls = extracted.tool_calls;
           usage = responsePayload.usage || usage;
         }
       } catch (parseError) {
@@ -280,7 +325,10 @@ export class LLMClient {
       }
 
       console.log(`📊 [${requestId}] Token usage:`, usage);
-      console.log(`🤖 [${requestId}] Response content length: ${content.length} characters`);
+      console.log(`🤖 [${requestId}] Response content: ${content ? content.length : 0} characters`);
+      if (tool_calls && tool_calls.length > 0) {
+        console.log(`🔧 [${requestId}] Tool calls: ${tool_calls.length}`);
+      }
 
       // Create debug info
       const debugInfo: LLMDebugInfo = {
@@ -299,6 +347,7 @@ export class LLMClient {
 
       return {
         content,
+        tool_calls,
         usage,
         model: options.model,
         finishReason: 'stop',
@@ -361,119 +410,66 @@ export class LLMClient {
 
 
   /**
-   * Extract content from LLM response
+   * Extract content and tool calls from LLM response (MCP standard format)
    */
-  private extractContent(responseData: any): string {
-    // Handle different response formats
+  private extractContentAndToolCalls(responseData: any): { content: string | null; tool_calls?: ToolCall[] } {
+    // Handle OpenAI Chat Completions API format
     if (responseData.choices && responseData.choices.length > 0) {
       const choice = responseData.choices[0];
       
-      if (choice.message && choice.message.content) {
-        return choice.message.content;
+      if (choice.message) {
+        const message = choice.message;
+        return {
+          content: message.content || null,
+          tool_calls: message.tool_calls || undefined
+        };
       }
       
+      // Legacy format
       if (choice.text) {
-        return choice.text;
+        return { content: choice.text };
       }
     }
 
     // Fallback for direct content
-    if (responseData.content) {
-      return responseData.content;
+    if (responseData.content !== undefined) {
+      return { content: responseData.content };
     }
 
     // If we have a fallback decision (from backend error handling)
     if (responseData.fallback) {
       console.warn('Using fallback decision from backend');
-      return JSON.stringify(responseData.fallback);
+      return { content: JSON.stringify(responseData.fallback) };
     }
 
     throw new LLMError('No content found in LLM response');
   }
 
+
   /**
-   * Parse LLM response for tool calls
-   * Similar to Python's process_llm_response method
+   * Parse tool calls from MCP standard response
    */
-  parseToolCall(response: string): { tool?: string; arguments?: any; isToolCall: boolean } {
-    try {
-      // Try to parse as JSON
-      const parsed = JSON.parse(response.trim());
-      
-      // Check for tool call format
-      if (parsed.tool && parsed.arguments) {
-        return {
-          tool: parsed.tool,
-          arguments: parsed.arguments,
-          isToolCall: true
-        };
-      }
-      
-      // Check for alternative formats
-      if (parsed.action === 'tool' && parsed.tool) {
-        return {
-          tool: parsed.tool,
-          arguments: parsed.params || parsed.arguments || {},
-          isToolCall: true
-        };
-      }
-      
-      return { isToolCall: false };
-      
-    } catch (error) {
-      // Try to extract JSON from text
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (parsed.tool && parsed.arguments) {
-            return {
-              tool: parsed.tool,
-              arguments: parsed.arguments,
-              isToolCall: true
-            };
-          }
-        } catch {
-          // Continue to return false
-        }
-      }
-      
-      return { isToolCall: false };
-    }
+  parseToolCalls(response: LLMResponse): ToolCall[] {
+    return response.tool_calls || [];
   }
 
   /**
-   * Build system prompt with tool information
-   * Similar to Python's system message building
+   * Create a tool message for MCP standard format
    */
-  buildSystemPrompt(toolsDescription: string): string {
-    return `You are a helpful AI assistant that can have natural conversations and use tools when needed.
+  createToolMessage(toolCallId: string, toolName: string, result: string): Message {
+    return {
+      role: 'tool',
+      tool_call_id: toolCallId,
+      name: toolName,
+      content: result
+    };
+  }
 
-Available tools:
-${toolsDescription}
-
-CRITICAL INSTRUCTIONS:
-- When a user asks you to DO something that requires a tool (calculate, store data, query DOM, etc.), you MUST use the appropriate tool
-- When you need to use a tool, respond with ONLY this exact JSON format, NO OTHER TEXT:
-{
-    "tool": "tool-name",
-    "arguments": {
-        "argument-name": "value"
-    }
-}
-- DO NOT include any explanatory text, descriptions, or conversation when using a tool
-- The JSON must be the COMPLETE and ONLY response
-- After using a tool, you'll receive the result and should respond naturally in plain text
-- For simple greetings or thanks, respond conversationally without tools
-- If a user asks you to do multiple things, use ONE tool at a time - the system will call you again for the next step
-
-Examples:
-- User: "Hi" → You: "Hello! How can I help you today?"
-- User: "Calculate 5 + 3" → You: {"tool": "calculator", "arguments": {"expression": "5 + 3"}}
-- User: "Store my name as John" → You: {"tool": "browser_storage", "arguments": {"action": "set", "key": "name", "value": "John"}}
-- User: "What tools do you have?" → You: {"tool": "list_tools", "arguments": {}}
-
-IMPORTANT: If you're asked to do calculations, storage operations, or DOM queries, you MUST use the tools, not just describe what you would do.`;
+  /**
+   * Generate unique tool call ID
+   */
+  generateToolCallId(): string {
+    return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**

@@ -51,9 +51,9 @@ function extractJSONFromText(text) {
   };
 }
 
-// Enhanced LLM proxy endpoint with detailed logging
+// Enhanced LLM proxy endpoint with detailed logging and MCP function calling support
 app.post("/api/llm", async (req, res) => {
-  const { prompt, messages, mode } = req.body;
+  const { prompt, messages, mode, model, temperature, max_tokens, tools, tool_choice, response_format } = req.body;
   const requestId = Math.random().toString(36).substr(2, 9);
   const startTime = Date.now();
   
@@ -62,18 +62,32 @@ app.post("/api/llm", async (req, res) => {
 
   let requestPayload;
 
-  // Handle new message-based requests (enhanced system)
+  // Handle new message-based requests (enhanced system with MCP function calling)
   if (messages && Array.isArray(messages)) {
     console.log(`📝 [${requestId}] Message-based request with ${messages.length} messages`);
     console.log(`📝 [${requestId}] Messages:`, JSON.stringify(messages, null, 2));
     
     requestPayload = {
-      model: "gpt-4.1-mini",
+      model: model || "gpt-4.1-mini",
       messages: messages,
-      temperature: 0.3,
-      max_tokens: 1000,
-      // Don't force JSON format for conversational responses
+      temperature: temperature || 0.3,
+      max_tokens: max_tokens || 1000
     };
+
+    // Add MCP function calling support
+    if (tools && Array.isArray(tools) && tools.length > 0) {
+      requestPayload.tools = tools;
+      requestPayload.tool_choice = tool_choice || "auto";
+      console.log(`🔧 [${requestId}] Function calling enabled with ${tools.length} tools`);
+      console.log(`🔧 [${requestId}] Tools:`, tools.map(t => t.function.name));
+      console.log(`🔧 [${requestId}] Tool choice: ${requestPayload.tool_choice}`);
+    }
+
+    // Add response format if specified
+    if (response_format) {
+      requestPayload.response_format = response_format;
+      console.log(`📝 [${requestId}] Response format: ${response_format.type}`);
+    }
   }
   // Handle legacy prompt-based requests (old autonomous system)
   else if (prompt && typeof prompt === 'string') {
@@ -137,17 +151,33 @@ app.post("/api/llm", async (req, res) => {
     });
     console.log(`🤖 [${requestId}] Raw response:\n${reply}`);
     
-    // Handle message-based requests (enhanced system) - return raw response
+    // Handle message-based requests (enhanced system) - return full OpenAI response
     if (messages && Array.isArray(messages)) {
-      console.log(`💬 [${requestId}] Returning conversational response`);
+      const choice = response.data.choices[0];
+      const message = choice.message;
+      
+      console.log(`💬 [${requestId}] Returning MCP-compatible response`);
+      
+      // Log function calls if present
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        console.log(`🔧 [${requestId}] Function calls detected: ${message.tool_calls.length}`);
+        console.log(`🔧 [${requestId}] Tool calls:`, message.tool_calls.map(tc => tc.function.name));
+      }
+      
       console.log(`⏱️ [${requestId}] Total request time: ${responseTime}ms\n`);
       
-      // Return the raw response for conversational chat
+      // Return the full OpenAI response format for MCP compatibility
       res.json({
-        content: reply,
+        choices: [{
+          message: {
+            role: message.role,
+            content: message.content,
+            tool_calls: message.tool_calls || undefined
+          },
+          finish_reason: choice.finish_reason
+        }],
         usage: usage,
-        model: response.data.model,
-        finish_reason: response.data.choices[0].finish_reason
+        model: response.data.model
       });
       return;
     }

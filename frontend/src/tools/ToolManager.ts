@@ -5,6 +5,7 @@
 
 import { Tool, ToolResult } from './Tool';
 import { getConfig } from '../config/Configuration';
+import { MCPTool } from '../llm/LLMClient';
 
 export interface ToolInfo {
   name: string;
@@ -98,28 +99,6 @@ export class ToolManager {
     }));
   }
 
-  /**
-   * Format all tools for LLM consumption
-   * Similar to Python's tools description building
-   */
-  formatAllToolsForLLM(): string {
-    const tools = Array.from(this.tools.values());
-    
-    if (tools.length === 0) {
-      return "No tools available.";
-    }
-
-    const toolDescriptions = tools.map(tool => tool.formatForLLM());
-    
-    return `Available Tools:
-
-${toolDescriptions.join('\n\n')}
-
-CRITICAL PARAMETER RULES:
-⚠️ ALWAYS use the EXACT parameter names from the schemas above!
-⚠️ NEVER guess parameter names - follow the schemas precisely!
-⚠️ All required parameters must be provided!`;
-  }
 
   /**
    * Execute a tool with comprehensive error handling and logging
@@ -325,6 +304,42 @@ CRITICAL PARAMETER RULES:
       tool.description.toLowerCase().includes(lowerQuery) ||
       (tool.title && tool.title.toLowerCase().includes(lowerQuery))
     );
+  }
+
+  /**
+   * Convert tools to MCP standard format for OpenAI function calling
+   */
+  getToolsForMCP(): MCPTool[] {
+    return Array.from(this.tools.values()).map(tool => ({
+      type: "function",
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema
+      }
+    }));
+  }
+
+  /**
+   * Get simplified system prompt for MCP standard format
+   * (Tools are provided in the tools array, not in system prompt)
+   */
+  buildMCPSystemPrompt(): string {
+    return `You are a helpful AI assistant that can use tools when needed.
+
+CRITICAL TOOL USAGE RULES:
+- When a user asks "what tools do you have" or similar questions about your capabilities, you MUST use the list_tools function to get the actual available tools
+- When a user asks you to DO something (calculate, store data, query information, etc.), you MUST use the appropriate tool
+- Use the function calling capability provided by the system - tools are available in the tools array
+- Wait for tool results before continuing your response
+- After using tools, provide natural conversational responses about what you accomplished
+- If asked to find something and you can't find it after 4 attempts using different tool parameters, then ask the user for help.
+
+
+
+NEVER make up or guess what tools you have - always use the list_tools function to get the real list.
+
+For simple greetings or general conversation that doesn't require tools or tool information, respond naturally.`;
   }
 }
 

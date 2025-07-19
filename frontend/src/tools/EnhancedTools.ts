@@ -132,7 +132,7 @@ export const domQueryTool = createTool(
     properties: {
       selector: {
         type: 'string',
-        description: 'CSS selector for the element (e.g., "button", "#myId", ".myClass")'
+        description: 'CSS selector for the element (e.g., "button", "#myId", ".myClass"). You can use element:nth-of-type(number) to iterate through elements.'
       },
       action: {
         type: 'string',

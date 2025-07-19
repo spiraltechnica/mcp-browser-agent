@@ -373,10 +373,10 @@ export class EnhancedMCPServer {
   }
 
   /**
-   * Get formatted tools description for LLM
+   * Get tools for MCP standard format
    */
-  getToolsDescriptionForLLM(): string {
-    return this.toolManager.formatAllToolsForLLM();
+  getToolsForMCP(): any[] {
+    return this.toolManager.getToolsForMCP();
   }
 
   /**
