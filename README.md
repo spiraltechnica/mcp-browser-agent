@@ -114,12 +114,12 @@ This system implements a **complete Model Context Protocol (MCP) architecture** 
 └─────────────────────────────────────────────────────────────┘
 
 MCP Components:
-├── MCP Host: Enhanced Agent System (agent/)
-├── MCP Client: Chat Session + LLM Client (session/, llm/)
-├── MCP Server: Tool & Resource Management (server/, tools/)
+├── MCP Host: Enhanced Agent System (mcp-host/)
+├── MCP Client: Chat Session + LLM Client (mcp/, llm/)
+├── MCP Server: Tool & Resource Management (mcp-server/)
 ├── Transport: In-Memory JSON-RPC Simulation (mcp/)
 ├── Multi-Agent Manager (components/)
-└── Configuration Management (config/)
+└── Configuration Management (mcp-host/)
 ```
 
 ### MCP Protocol Compliance
@@ -155,7 +155,7 @@ According to the [official MCP specification](https://modelcontextprotocol.io/sp
 │                                                             │
 │  ┌─────────────────────┐    ┌─────────────────────────┐    │
 │  │     MCP CLIENT      │◄──►│     MCP SERVER          │    │
-│  │  ChatSession +      │    │  EnhancedMCPServer      │    │
+│  │  MCPClient +        │    │  MCPServer              │    │
 │  │  LLMClient          │    │                         │    │
 │  │                     │    │  • Exposes tools        │    │
 │  │  • Maintains        │    │  • Handles execution    │    │
@@ -168,7 +168,7 @@ According to the [official MCP specification](https://modelcontextprotocol.io/sp
                     Browser Process
 ```
 
-#### **MCP Host** (`App.tsx` + `EnhancedAgent.ts`)
+#### **MCP Host** (`App.tsx` + `MCPHost.ts`)
 - **Role**: Container and coordinator for the entire MCP ecosystem
 - **Responsibilities**:
   - Creates and manages the MCP client instance
@@ -179,7 +179,7 @@ According to the [official MCP specification](https://modelcontextprotocol.io/sp
   - Manages context aggregation across the system
   - Provides the user interface and interaction layer
 
-#### **MCP Client** (`ChatSession.ts` + `LLMClient.ts`)
+#### **MCP Client** (`MCPClient.ts` + `LLMClient.ts`)
 - **Role**: Protocol client maintaining 1:1 connection with MCP server
 - **Responsibilities**:
   - Establishes stateful session with the MCP server
@@ -189,7 +189,7 @@ According to the [official MCP specification](https://modelcontextprotocol.io/sp
   - Maintains security boundaries
   - Coordinates conversation flow and tool execution requests
 
-#### **MCP Server** (`EnhancedMCPServer.ts`)
+#### **MCP Server** (`MCPServer.ts`)
 - **Role**: Provides specialized context and capabilities
 - **Responsibilities**:
   - Exposes resources, tools, and prompts via MCP primitives
@@ -853,7 +853,8 @@ This rich conversation history allows the agent to make informed decisions about
 
 ## 🛠️ Development
 
-### Project Structure
+### Project Structure & Core Functionality
+
 ```
 mcp-browser-agent/
 ├── backend/                 # Express.js API server
@@ -862,25 +863,348 @@ mcp-browser-agent/
 │   └── .env.example        # Environment template
 ├── frontend/               # React application
 │   ├── src/
-│   │   ├── agent/          # Enhanced agent system
-│   │   ├── components/     # UI components
-│   │   ├── config/         # Configuration management
-│   │   ├── llm/           # LLM client with error handling
-│   │   ├── server/        # MCP server implementation
-│   │   ├── session/       # Chat session management
-│   │   ├── tools/         # Tool abstractions
-│   │   └── App.tsx        # Main application
+│   │   ├── mcp/            # 🔌 MCP Protocol Layer
+│   │   │   ├── MCPProtocol.ts    # Protocol definitions & JSON-RPC methods
+│   │   │   ├── MCPTransport.ts   # In-memory JSON-RPC transport simulation
+│   │   │   └── MCPClient.ts      # Session orchestrator & conversation manager
+│   │   ├── mcp-host/       # 🏠 MCP Host Implementation  
+│   │   │   ├── HostConfiguration.ts  # Centralized config management
+│   │   │   ├── MCPHost.ts        # Main agent orchestrator & lifecycle
+│   │   │   └── HostManager.ts    # Multi-agent management system
+│   │   ├── mcp-server/     # 🛠️ MCP Server Implementation
+│   │   │   ├── MCPServer.ts      # Tool & resource server
+│   │   │   ├── ToolRegistry.ts   # Tool registration & execution engine
+│   │   │   ├── ServerTools.ts    # Built-in tool implementations
+│   │   │   └── Tool.ts           # Tool abstraction & validation framework
+│   │   ├── components/     # 🎨 UI Components
+│   │   │   ├── MCPHostInterface.tsx  # Multi-agent interface
+│   │   │   ├── MCPDebugPanel.tsx     # Debug & monitoring panel
+│   │   │   └── TokenUsageDisplay.tsx # Token usage tracking
+│   │   ├── llm/           # 🧠 LLM client with error handling
+│   │   ├── debug/         # 📊 Debug and monitoring
+│   │   └── App.tsx        # Main application entry point
 │   ├── package.json       # Frontend dependencies
 │   └── vite.config.ts     # Vite configuration
 └── README.md              # This file
 ```
+
+## 🏗️ Detailed Architecture & File Functionality
+
+### 🔌 **MCP Protocol Layer** (`frontend/src/mcp/`)
+
+#### **MCPProtocol.ts** - Protocol Definitions
+```typescript
+// Core MCP protocol constants and types
+export const MCPMethods = {
+  INITIALIZE: 'initialize',
+  TOOLS_LIST: 'tools/list', 
+  TOOLS_CALL: 'tools/call'
+} as const;
+
+// JSON-RPC message structures for MCP communication
+export interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  id: string | number;
+  method: string;
+  params?: any;
+}
+```
+**Core Functionality:**
+- Defines official MCP protocol methods and message formats
+- Implements JSON-RPC 2.0 specification for MCP communication
+- Provides type safety for all MCP protocol interactions
+- Ensures compliance with MCP specification version 2025-06-18
+
+#### **MCPTransport.ts** - In-Memory JSON-RPC Transport
+```typescript
+// Simulates proper JSON-RPC communication between MCP components
+export class MCPTransport {
+  async sendRequest(method: string, params?: any): Promise<any> {
+    // Serializes request, routes to server, deserializes response
+    // Maintains proper JSON-RPC correlation and error handling
+  }
+}
+```
+**Core Functionality:**
+- Simulates network JSON-RPC transport entirely in browser memory
+- Maintains request/response correlation with unique IDs
+- Provides proper error handling with standard JSON-RPC error codes
+- Enables true MCP protocol compliance without network overhead
+- Logs all requests/responses for debugging and monitoring
+
+#### **MCPClient.ts** - Session Orchestrator & Conversation Manager
+```typescript
+export class MCPClient {
+  async processMessage(userMessage: string): Promise<string> {
+    // 1. Add user message to conversation history
+    // 2. Get available tools via JSON-RPC from MCP server
+    // 3. Send conversation + tools to LLM
+    // 4. Execute any tool calls via JSON-RPC
+    // 5. Get final response from LLM
+    // 6. Return natural language response
+  }
+}
+```
+**Core Functionality:**
+- **Conversation Management**: Maintains full conversation history with automatic trimming
+- **MCP Protocol Orchestration**: Handles JSON-RPC communication with MCP server
+- **Tool Execution Flow**: Coordinates between LLM decisions and tool execution
+- **Error Recovery**: Comprehensive error handling with session recovery
+- **Context Management**: Smart message history management and context preservation
+- **Debug Integration**: Full integration with debug event system for monitoring
+
+### 🏠 **MCP Host Implementation** (`frontend/src/mcp-host/`)
+
+#### **HostConfiguration.ts** - Centralized Configuration Management
+```typescript
+export class Configuration {
+  get llmConfig(): LLMConfig {
+    return {
+      model: "gpt-4.1-mini",
+      temperature: 0.3,
+      maxTokens: 1000,
+      timeout: 30000
+    };
+  }
+  
+  get serverConfig(): ServerConfig {
+    return {
+      name: "browser-mcp-server",
+      version: "1.0.0", 
+      protocolVersion: "2025-06-18",
+      capabilities: {
+        tools: { listChanged: true },
+        resources: { subscribe: true, listChanged: true }
+      }
+    };
+  }
+}
+```
+**Core Functionality:**
+- **Singleton Pattern**: Ensures consistent configuration across entire application
+- **Environment Integration**: Loads from environment variables with fallbacks
+- **MCP Compliance**: Proper protocol version and capability configuration
+- **Validation**: Comprehensive configuration validation with helpful error messages
+- **Runtime Updates**: Support for dynamic configuration reloading
+- **API Endpoints**: Centralized endpoint configuration for backend communication
+
+#### **MCPHost.ts** - Main Agent Orchestrator & Lifecycle Manager
+```typescript
+export class MCPHost {
+  async start(): Promise<void> {
+    // 1. Initialize MCP server with tools
+    // 2. Validate LLM client configuration  
+    // 3. Create and start MCP client session
+    // 4. Set up error handling and monitoring
+    // 5. Log system summary and health status
+  }
+  
+  async processMessage(message: string): Promise<string> {
+    // Delegates to MCPClient for actual processing
+    return await this.mcpClient.processMessage(message);
+  }
+}
+```
+**Core Functionality:**
+- **System Orchestration**: Coordinates all MCP components (Host ↔ Client ↔ Server)
+- **Lifecycle Management**: Handles startup, shutdown, and restart sequences
+- **Health Monitoring**: Continuous system health checks and statistics
+- **Error Handling**: Multi-layer error handling with automatic recovery
+- **Resource Management**: Proper initialization and cleanup of all components
+- **Statistics Tracking**: Comprehensive execution metrics and performance monitoring
+
+#### **HostManager.ts** - Multi-Agent Management System
+```typescript
+export class AgentManager {
+  async createAgent(name?: string): Promise<string> {
+    // Creates new isolated agent instance with unique ID
+    // Each agent has independent conversation and context
+  }
+  
+  async processMessage(agentId: string, message: string): Promise<string> {
+    // Routes message to specific agent instance
+    // Maintains complete isolation between agents
+  }
+}
+```
+**Core Functionality:**
+- **Multi-Agent Orchestration**: Manages up to 5 independent AI agents simultaneously
+- **Agent Isolation**: Each agent maintains separate conversation history and context
+- **Resource Sharing**: Efficient sharing of tools and LLM client across agents
+- **Agent Lifecycle**: Individual start/stop/restart controls for each agent
+- **State Management**: Persistent agent state with proper cleanup
+- **Performance Optimization**: Shared infrastructure with isolated execution contexts
+
+### 🛠️ **MCP Server Implementation** (`frontend/src/mcp-server/`)
+
+#### **MCPServer.ts** - Tool & Resource Server
+```typescript
+export class MCPServer {
+  async handleJsonRpcMessage(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+    switch (request.method) {
+      case MCPMethods.INITIALIZE:
+        return await this.handleInitialize(request);
+      case MCPMethods.TOOLS_LIST:
+        return await this.handleToolsList(request);
+      case MCPMethods.TOOLS_CALL:
+        return await this.handleToolsCall(request);
+    }
+  }
+}
+```
+**Core Functionality:**
+- **JSON-RPC Server**: Handles all MCP protocol requests with proper response formatting
+- **Tool Management**: Registration, discovery, and execution of tools
+- **Capability Negotiation**: Proper MCP capability exchange during initialization
+- **Resource Management**: Manages tools, resources, and server state
+- **Health Monitoring**: Server health checks and performance metrics
+- **Security**: Input validation and safe tool execution environment
+
+#### **ToolRegistry.ts** - Tool Registration & Execution Engine
+```typescript
+export class ToolRegistry {
+  async executeTool(name: string, parameters: any): Promise<ToolResult> {
+    // 1. Validate tool exists and parameters are correct
+    // 2. Execute tool in isolated context with error handling
+    // 3. Record execution in history with timing and results
+    // 4. Return standardized result format
+  }
+  
+  getExecutionStats(): ExecutionStats {
+    // Comprehensive statistics: success/failure rates, timing, usage patterns
+  }
+}
+```
+**Core Functionality:**
+- **Tool Registration**: Dynamic tool registration with validation and conflict detection
+- **Execution Engine**: Safe tool execution with comprehensive error handling
+- **History Tracking**: Complete execution history with timing and result tracking
+- **Statistics**: Detailed execution statistics and performance metrics
+- **Search & Discovery**: Tool search by name, description, and capabilities
+- **MCP Integration**: Converts tools to MCP standard format for LLM consumption
+
+#### **ServerTools.ts** - Built-in Tool Implementations
+```typescript
+// Calculator Tool - Safe mathematical expression evaluation
+export const calculatorTool = createTool(
+  'calculator',
+  'Calculate mathematical expressions safely',
+  schema,
+  async (args) => {
+    const evaluator = new SafeMathEvaluator();
+    return { success: true, data: { result: evaluator.evaluate(args.expression) } };
+  }
+);
+
+// DOM Query Tool - Comprehensive webpage interaction
+export const domQueryTool = createTool(
+  'dom_query', 
+  'Interact with webpage elements and content',
+  schema,
+  async (args) => {
+    // Supports: clicking, form filling, text reading, scrolling, content manipulation
+    // Advanced text-based element finding with fallback strategies
+  }
+);
+```
+**Core Functionality:**
+- **Calculator Tool**: Safe mathematical expression evaluation with sqrt, exponents, validation
+- **DOM Query Tool**: Comprehensive webpage interaction (click, fill, read, scroll, manipulate)
+- **Browser Storage Tool**: Persistent data storage with localStorage integration
+- **List Tools Tool**: Dynamic tool discovery and capability reporting
+- **Advanced Element Finding**: Text-based element location with intelligent fallbacks
+- **Safety Validation**: Input validation and security checks for all operations
+
+#### **Tool.ts** - Tool Abstraction & Validation Framework
+```typescript
+export function createTool(
+  name: string,
+  description: string, 
+  inputSchema: any,
+  handler: ToolHandler,
+  title?: string
+): Tool {
+  return new Tool(name, description, inputSchema, handler, title);
+}
+
+export class Tool {
+  validate(): { valid: boolean; errors: string[] } {
+    // Comprehensive validation of tool definition and schema
+  }
+  
+  async execute(parameters: any): Promise<ToolResult> {
+    // Safe execution with parameter validation and error handling
+  }
+}
+```
+**Core Functionality:**
+- **Tool Abstraction**: Unified interface for all tool implementations
+- **Schema Validation**: JSON Schema validation for tool parameters
+- **Error Handling**: Comprehensive error handling with detailed error messages
+- **Result Standardization**: Consistent result format across all tools
+- **Metadata Management**: Tool metadata, descriptions, and capability information
+- **Execution Safety**: Safe execution environment with timeout and error recovery
+
+### 🎨 **UI Components** (`frontend/src/components/`)
+
+#### **MCPHostInterface.tsx** - Multi-Agent Interface
+```typescript
+function MultiAgentInterface() {
+  // Manages multiple agent tabs with independent conversations
+  // Real-time agent status monitoring and controls
+  // Per-agent activity logs and performance metrics
+}
+```
+**Core Functionality:**
+- **Multi-Agent UI**: Tabbed interface for managing multiple AI agents
+- **Independent Conversations**: Separate chat history and context per agent
+- **Agent Controls**: Individual start/stop/rename/remove controls
+- **Real-time Monitoring**: Live agent status and activity indicators
+- **Resource Sharing**: Efficient UI updates with shared infrastructure
+
+#### **MCPDebugPanel.tsx** - Debug & Monitoring Panel
+```typescript
+function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }) {
+  // Real-time conversation flow visualization
+  // LLM request/response monitoring with raw data
+  // Tool execution tracking with timing and results
+}
+```
+**Core Functionality:**
+- **Conversation Flow Tracking**: Visual representation of conversation progression
+- **LLM Debug Monitoring**: Complete request/response logging with raw data
+- **Tool Execution Tracking**: Detailed tool execution logs with timing
+- **Performance Metrics**: Real-time performance and error rate monitoring
+- **Debug Event Integration**: Full integration with debug event system
+
+### 🧠 **LLM Client** (`frontend/src/llm/`)
+
+#### **LLMClient.ts** - Enhanced LLM Communication
+```typescript
+export class LLMClient {
+  async getResponse(messages: Message[], options?: LLMRequestOptions): Promise<LLMResponse> {
+    // 1. Validate configuration and messages
+    // 2. Build request with tools and parameters
+    // 3. Send to backend proxy with timeout handling
+    // 4. Parse response and extract tool calls
+    // 5. Return structured response with debug info
+  }
+}
+```
+**Core Functionality:**
+- **OpenAI Integration**: Full Chat Completions API support with function calling
+- **Error Handling**: Comprehensive error handling with retry logic and fallbacks
+- **Debug Integration**: Complete request/response logging for debugging
+- **Tool Call Parsing**: Proper parsing and validation of LLM tool calls
+- **Performance Monitoring**: Request timing and token usage tracking
+- **Backend Proxy**: Secure API key handling through backend proxy
 
 ### Adding Custom Tools
 
 Create new tools using the enhanced tool abstraction:
 
 ```typescript
-import { createTool } from './tools/Tool';
+import { createTool } from './mcp-server/Tool';
 
 const myCustomTool = createTool(
   'my_tool',
@@ -898,7 +1222,7 @@ const myCustomTool = createTool(
   }
 );
 
-// Register in tools/EnhancedTools.ts
+// Register in mcp-server/ServerTools.ts
 export const enhancedTools = [
   // ... existing tools
   myCustomTool
