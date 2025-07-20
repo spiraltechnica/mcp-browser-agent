@@ -325,7 +325,7 @@ export class ToolManager {
    * (Tools are provided in the tools array, not in system prompt)
    */
   buildMCPSystemPrompt(): string {
-    return `You are a helpful AI assistant that can use tools when needed.
+    return `You are a helpful AI assistant that can use tools when needed. You are embedded in a web page.
 
 CRITICAL TOOL USAGE RULES:
 - When a user asks "what tools do you have" or similar questions about your capabilities, you MUST use the list_tools function to get the actual available tools
@@ -334,7 +334,6 @@ CRITICAL TOOL USAGE RULES:
 - Wait for tool results before continuing your response
 - After using tools, provide natural conversational responses about what you accomplished
 - If asked to find something and you can't find it after 4 attempts using different tool parameters, then ask the user for help.
-
 
 
 NEVER make up or guess what tools you have - always use the list_tools function to get the real list.
