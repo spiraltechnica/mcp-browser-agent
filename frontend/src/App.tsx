@@ -5,13 +5,13 @@ import {
   isEnhancedAgentRunning, 
   getEnhancedAgentStats,
   createEnhancedAgent 
-} from "./agent/EnhancedAgent";
-import { getEnhancedMCPServer } from "./server/EnhancedMCPServer";
+} from "./mcp-host/MCPHost";
+import { getMCPServer } from "./mcp-server/MCPServer";
 import { getLLMClient, LLMDebugInfo } from "./llm/LLMClient";
-import { EnhancedDebugPanel, ConversationFlow } from "./components/EnhancedDebugPanel";
+import { EnhancedDebugPanel, ConversationFlow } from "./components/MCPDebugPanel";
 import { getDebugEventManager } from "./debug/DebugEventManager";
 import { TokenUsageDisplay } from "./components/TokenUsageDisplay";
-import MultiAgentInterface from "./components/MultiAgentInterface";
+import MultiAgentInterface from "./components/MCPHostInterface";
 
 interface AgentStats {
   isRunning: boolean;
@@ -255,7 +255,7 @@ function App() {
     const loadTools = async () => {
       try {
         // Use enhanced server only
-        const enhancedServer = getEnhancedMCPServer();
+        const enhancedServer = getMCPServer();
         await enhancedServer.initialize();
         const availableTools = await enhancedServer.listTools();
         setTools(availableTools);

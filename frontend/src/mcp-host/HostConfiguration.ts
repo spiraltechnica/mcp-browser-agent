@@ -117,7 +117,7 @@ export class Configuration {
     return {
       name: "browser-mcp-server",
       version: "1.0.0",
-      protocolVersion: "2024-11-05",
+      protocolVersion: "2025-06-18",
       capabilities: {
         tools: { listChanged: true },
         resources: { subscribe: true, listChanged: true }

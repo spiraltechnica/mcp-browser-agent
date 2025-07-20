@@ -4,10 +4,10 @@
  * Now supports JSON-RPC communication for true MCP compliance
  */
 
-import { getConfig } from '../config/Configuration';
-import { ToolManager, getToolManager } from '../tools/ToolManager';
-import { Tool } from '../tools/Tool';
-import { enhancedTools } from '../tools/EnhancedTools';
+import { getConfig } from '../mcp-host/HostConfiguration';
+import { ToolRegistry, getToolRegistry } from './ToolRegistry';
+import { Tool } from './Tool';
+import { enhancedTools } from './ServerTools';
 import { 
   JsonRpcRequest, 
   JsonRpcResponse, 
@@ -58,19 +58,19 @@ export interface MCPCallToolResult {
  * Enhanced MCP Server with proper resource management and error handling
  * Similar to the Python Server class
  */
-export class EnhancedMCPServer {
-  private toolManager: ToolManager;
+export class MCPServer {
+  private toolRegistry: ToolRegistry;
   private listeners: Set<() => void> = new Set();
   private initialized = false;
   private config = getConfig();
   private serverInfo: MCPServerInfo;
 
   constructor() {
-    this.toolManager = getToolManager();
+    this.toolRegistry = getToolRegistry();
     this.serverInfo = this.config.serverConfig;
     
     // Listen for tool changes
-    this.toolManager.onToolsChanged(() => {
+    this.toolRegistry.onToolsChanged(() => {
       this.notifyListeners();
     });
 
@@ -203,7 +203,7 @@ export class EnhancedMCPServer {
     try {
       const params = request.params as ToolCallRequest;
       
-      if (!this.toolManager.hasTool(params.name)) {
+      if (!this.toolRegistry.hasTool(params.name)) {
         return {
           jsonrpc: "2.0",
           id: request.id,
@@ -256,7 +256,7 @@ export class EnhancedMCPServer {
       await this.setupDynamicListTools();
 
       this.initialized = true;
-      console.log(`✅ Enhanced MCP Server initialized with ${this.toolManager.getToolCount()} tools`);
+      console.log(`✅ Enhanced MCP Server initialized with ${this.toolRegistry.getToolCount()} tools`);
 
       return this.serverInfo;
 
@@ -274,7 +274,7 @@ export class EnhancedMCPServer {
 
     for (const tool of enhancedTools) {
       try {
-        this.toolManager.registerTool(tool);
+        this.toolRegistry.registerTool(tool);
       } catch (error) {
         console.error(`❌ Failed to register tool ${tool.name}:`, error);
       }
@@ -297,7 +297,7 @@ export class EnhancedMCPServer {
         required: []
       },
       async () => {
-        const tools = this.toolManager.getToolsInfo();
+        const tools = this.toolRegistry.getToolsInfo();
         return {
           success: true,
           data: {
@@ -315,8 +315,8 @@ export class EnhancedMCPServer {
     );
 
     // Replace the placeholder list_tools with the dynamic one
-    this.toolManager.unregisterTool('list_tools');
-    this.toolManager.registerTool(dynamicListToolsTool);
+    this.toolRegistry.unregisterTool('list_tools');
+    this.toolRegistry.registerTool(dynamicListToolsTool);
   }
 
   /**
@@ -327,7 +327,7 @@ export class EnhancedMCPServer {
       throw new Error("Server not initialized. Call initialize() first.");
     }
 
-    return this.toolManager.getToolsInfo();
+    return this.toolRegistry.getToolsInfo();
   }
 
   /**
@@ -342,7 +342,7 @@ export class EnhancedMCPServer {
     try {
       console.log(`🔧 Calling tool: ${name}`, arguments_);
 
-      const result = await this.toolManager.executeTool(name, arguments_);
+      const result = await this.toolRegistry.executeTool(name, arguments_);
 
       if (result.success) {
         console.log(`✅ Tool call successful: ${name}`);
@@ -386,7 +386,7 @@ export class EnhancedMCPServer {
       console.warn("Server not initialized. Tool will be registered but may not be immediately available.");
     }
 
-    this.toolManager.registerTool(tool);
+    this.toolRegistry.registerTool(tool);
     this.notifyListeners();
   }
 
@@ -394,7 +394,7 @@ export class EnhancedMCPServer {
    * Unregister a tool
    */
   unregisterTool(name: string): boolean {
-    const result = this.toolManager.unregisterTool(name);
+    const result = this.toolRegistry.unregisterTool(name);
     if (result) {
       this.notifyListeners();
     }
@@ -405,14 +405,14 @@ export class EnhancedMCPServer {
    * Get tool by name
    */
   getTool(name: string): Tool | undefined {
-    return this.toolManager.getTool(name);
+    return this.toolRegistry.getTool(name);
   }
 
   /**
    * Check if tool exists
    */
   hasTool(name: string): boolean {
-    return this.toolManager.hasTool(name);
+    return this.toolRegistry.hasTool(name);
   }
 
   /**
@@ -426,8 +426,8 @@ export class EnhancedMCPServer {
   } {
     return {
       initialized: this.initialized,
-      toolCount: this.toolManager.getToolCount(),
-      executionStats: this.toolManager.getExecutionStats(),
+      toolCount: this.toolRegistry.getToolCount(),
+      executionStats: this.toolRegistry.getExecutionStats(),
       serverInfo: this.serverInfo
     };
   }
@@ -436,28 +436,28 @@ export class EnhancedMCPServer {
    * Get execution history
    */
   getExecutionHistory(): any[] {
-    return this.toolManager.getExecutionHistory();
+    return this.toolRegistry.getExecutionHistory();
   }
 
   /**
    * Clear execution history
    */
   clearHistory(): void {
-    this.toolManager.clearHistory();
+    this.toolRegistry.clearHistory();
   }
 
   /**
    * Validate all tools
    */
   validateTools(): { valid: boolean; errors: Record<string, string[]> } {
-    return this.toolManager.validateAllTools();
+    return this.toolRegistry.validateAllTools();
   }
 
   /**
    * Search tools
    */
   searchTools(query: string): Tool[] {
-    return this.toolManager.searchTools(query);
+    return this.toolRegistry.searchTools(query);
   }
 
   /**
@@ -487,14 +487,14 @@ export class EnhancedMCPServer {
    * Get tool count
    */
   getToolCount(): number {
-    return this.toolManager.getToolCount();
+    return this.toolRegistry.getToolCount();
   }
 
   /**
    * Check if server has tools
    */
   hasTools(): boolean {
-    return this.toolManager.hasTools();
+    return this.toolRegistry.hasTools();
   }
 
   /**
@@ -520,7 +520,7 @@ export class EnhancedMCPServer {
       console.log("🧹 Cleaning up Enhanced MCP Server...");
       
       // Clear execution history
-      this.toolManager.clearHistory();
+      this.toolRegistry.clearHistory();
       
       // Clear listeners
       this.listeners.clear();
@@ -550,7 +550,7 @@ export class EnhancedMCPServer {
    * Get tools for MCP standard format
    */
   getToolsForMCP(): any[] {
-    return this.toolManager.getToolsForMCP();
+    return this.toolRegistry.getToolsForMCP();
   }
 
   /**
@@ -563,13 +563,13 @@ export class EnhancedMCPServer {
     errors: string[];
     timestamp: string;
   } {
-    const validation = this.toolManager.validateAllTools();
-    const stats = this.toolManager.getExecutionStats();
+    const validation = this.toolRegistry.validateAllTools();
+    const stats = this.toolRegistry.getExecutionStats();
     
     return {
       status: this.initialized && validation.valid ? 'healthy' : 'unhealthy',
       initialized: this.initialized,
-      toolCount: this.toolManager.getToolCount(),
+      toolCount: this.toolRegistry.getToolCount(),
       errors: stats.recentErrors,
       timestamp: new Date().toISOString()
     };
@@ -577,26 +577,26 @@ export class EnhancedMCPServer {
 }
 
 /**
- * Global enhanced server instance
+ * Global MCP server instance
  */
-let globalEnhancedServer: EnhancedMCPServer | null = null;
+let globalMCPServer: MCPServer | null = null;
 
 /**
- * Get the global enhanced server instance
+ * Get the global MCP server instance
  */
-export function getEnhancedMCPServer(): EnhancedMCPServer {
-  if (!globalEnhancedServer) {
-    globalEnhancedServer = new EnhancedMCPServer();
+export function getMCPServer(): MCPServer {
+  if (!globalMCPServer) {
+    globalMCPServer = new MCPServer();
   }
-  return globalEnhancedServer;
+  return globalMCPServer;
 }
 
 /**
- * Reset the global enhanced server (useful for testing)
+ * Reset the global MCP server (useful for testing)
  */
-export function resetEnhancedMCPServer(): void {
-  if (globalEnhancedServer) {
-    globalEnhancedServer.cleanup();
+export function resetMCPServer(): void {
+  if (globalMCPServer) {
+    globalMCPServer.cleanup();
   }
-  globalEnhancedServer = null;
+  globalMCPServer = null;
 }

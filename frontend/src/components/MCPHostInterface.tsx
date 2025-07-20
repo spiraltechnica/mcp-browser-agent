@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { AgentManager, AgentInstance, createAgentManager } from "../agent/AgentManager";
+import { AgentManager, AgentInstance, createAgentManager } from "../mcp-host/HostManager";
 import { TokenUsageDisplay } from "./TokenUsageDisplay";
-import { EnhancedDebugPanel, ConversationFlow } from "./EnhancedDebugPanel";
+import { EnhancedDebugPanel, ConversationFlow } from "./MCPDebugPanel";
 import { getDebugEventManager } from "../debug/DebugEventManager";
 import { getLLMClient, LLMDebugInfo } from "../llm/LLMClient";
 

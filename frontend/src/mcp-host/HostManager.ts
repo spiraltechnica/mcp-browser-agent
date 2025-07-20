@@ -3,15 +3,15 @@
  * Manages the lifecycle and coordination of multiple Enhanced Agents
  */
 
-import { EnhancedAgent } from './EnhancedAgent';
-import { ToolManager, getToolManager } from '../tools/ToolManager';
-import { EnhancedMCPServer, getEnhancedMCPServer } from '../server/EnhancedMCPServer';
+import { MCPHost } from './MCPHost';
+import { ToolRegistry, getToolRegistry } from '../mcp-server/ToolRegistry';
+import { MCPServer, getMCPServer } from '../mcp-server/MCPServer';
 import { LLMClient, getLLMClient } from '../llm/LLMClient';
 
 export interface AgentInstance {
   id: string;
   name: string;
-  agent: EnhancedAgent;
+  agent: MCPHost;
   isActive: boolean;
   createdAt: Date;
   lastActivity: Date;
@@ -30,8 +30,8 @@ export interface AgentManagerStats {
  */
 export class AgentManager {
   private agents: Map<string, AgentInstance> = new Map();
-  private sharedToolManager: ToolManager;
-  private sharedMCPServer: EnhancedMCPServer;
+  private sharedToolRegistry: ToolRegistry;
+  private sharedMCPServer: MCPServer;
   private sharedLLMClient: LLMClient;
   private onLog: (agentId: string, message: string) => void;
   private startTime = Date.now();
@@ -39,8 +39,8 @@ export class AgentManager {
 
   constructor(onLog: (agentId: string, message: string) => void) {
     this.onLog = onLog;
-    this.sharedToolManager = getToolManager();
-    this.sharedMCPServer = getEnhancedMCPServer();
+    this.sharedToolRegistry = getToolRegistry();
+    this.sharedMCPServer = getMCPServer();
     this.sharedLLMClient = getLLMClient();
   }
 
@@ -59,7 +59,7 @@ export class AgentManager {
 
     try {
       // Create agent with instance-specific logging
-      const agent = new EnhancedAgent((message: string) => {
+      const agent = new MCPHost((message: string) => {
         this.onLog(agentId, message);
       });
 
@@ -307,9 +307,9 @@ export class AgentManager {
    */
   getSharedResourcesStatus(): any {
     return {
-      toolManager: {
-        toolCount: this.sharedToolManager.getToolCount(),
-        executionStats: this.sharedToolManager.getExecutionStats()
+      toolRegistry: {
+        toolCount: this.sharedToolRegistry.getToolCount(),
+        executionStats: this.sharedToolRegistry.getExecutionStats()
       },
       mcpServer: {
         status: this.sharedMCPServer.healthCheck(),

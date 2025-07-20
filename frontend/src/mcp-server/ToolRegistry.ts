@@ -1,10 +1,10 @@
 /**
- * Tool Manager for centralized tool registration and management
+ * Tool Registry for centralized tool registration and management
  * Similar to the Python implementation's tool management approach
  */
 
 import { Tool, ToolResult } from './Tool';
-import { getConfig } from '../config/Configuration';
+import { getConfig } from '../mcp-host/HostConfiguration';
 import { MCPTool } from '../llm/LLMClient';
 
 export interface ToolInfo {
@@ -18,7 +18,7 @@ export interface ToolInfo {
  * Centralized tool management system
  * Handles tool registration, discovery, and execution
  */
-export class ToolManager {
+export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
   private listeners: Set<() => void> = new Set();
   private executionHistory: Array<{
@@ -343,23 +343,23 @@ For simple greetings or general conversation that doesn't require tools or tool 
 }
 
 /**
- * Global tool manager instance
+ * Global tool registry instance
  */
-let globalToolManager: ToolManager | null = null;
+let globalToolRegistry: ToolRegistry | null = null;
 
 /**
- * Get the global tool manager instance
+ * Get the global tool registry instance
  */
-export function getToolManager(): ToolManager {
-  if (!globalToolManager) {
-    globalToolManager = new ToolManager();
+export function getToolRegistry(): ToolRegistry {
+  if (!globalToolRegistry) {
+    globalToolRegistry = new ToolRegistry();
   }
-  return globalToolManager;
+  return globalToolRegistry;
 }
 
 /**
- * Reset the global tool manager (useful for testing)
+ * Reset the global tool registry (useful for testing)
  */
-export function resetToolManager(): void {
-  globalToolManager = null;
+export function resetToolRegistry(): void {
+  globalToolRegistry = null;
 }

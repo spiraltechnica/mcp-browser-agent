@@ -1,13 +1,13 @@
 /**
- * Enhanced Agent following the Python implementation pattern
+ * MCP Host following the Python implementation pattern
  * Integrates all the new architecture components
  */
 
-import { ChatSession, SessionStats } from '../session/ChatSession';
-import { EnhancedMCPServer, getEnhancedMCPServer } from '../server/EnhancedMCPServer';
-import { ToolManager, getToolManager } from '../tools/ToolManager';
+import { MCPClient, SessionStats } from '../mcp/MCPClient';
+import { MCPServer, getMCPServer } from '../mcp-server/MCPServer';
+import { ToolRegistry, getToolRegistry } from '../mcp-server/ToolRegistry';
 import { LLMClient, getLLMClient } from '../llm/LLMClient';
-import { getConfig } from '../config/Configuration';
+import { getConfig } from './HostConfiguration';
 
 export interface AgentStats {
   isRunning: boolean;
@@ -19,14 +19,14 @@ export interface AgentStats {
 }
 
 /**
- * Enhanced Agent that orchestrates the entire system
+ * MCP Host that orchestrates the entire system
  * Similar to the Python main function and ChatSession orchestration
  */
-export class EnhancedAgent {
+export class MCPHost {
   private isActive = false;
-  private chatSession: ChatSession | null = null;
-  private mcpServer: EnhancedMCPServer;
-  private toolManager: ToolManager;
+  private mcpClient: MCPClient | null = null;
+  private mcpServer: MCPServer;
+  private toolRegistry: ToolRegistry;
   private llmClient: LLMClient;
   private onLog: (message: string) => void;
   private config = getConfig();
@@ -34,8 +34,8 @@ export class EnhancedAgent {
 
   constructor(onLog: (message: string) => void) {
     this.onLog = onLog;
-    this.mcpServer = getEnhancedMCPServer();
-    this.toolManager = getToolManager();
+    this.mcpServer = getMCPServer();
+    this.toolRegistry = getToolRegistry();
     this.llmClient = getLLMClient();
   }
 
@@ -65,16 +65,16 @@ export class EnhancedAgent {
         this.log("✅ LLM client configured");
       }
 
-      // Create chat session
-      this.log("💬 Creating chat session...");
-      this.chatSession = new ChatSession(
-        this.toolManager,
+      // Create MCP client
+      this.log("💬 Creating MCP client...");
+      this.mcpClient = new MCPClient(
+        this.toolRegistry,
         this.llmClient,
         this.onLog
       );
 
-      // Start the chat session
-      await this.chatSession.start();
+      // Start the MCP client
+      await this.mcpClient.start();
 
       this.isActive = true;
       this.log("✅ Enhanced MCP Agent started successfully");
@@ -104,15 +104,15 @@ export class EnhancedAgent {
   }
 
   /**
-   * Process a user message through the chat session
+   * Process a user message through the MCP client
    */
   async processMessage(message: string): Promise<string> {
-    if (!this.isActive || !this.chatSession) {
+    if (!this.isActive || !this.mcpClient) {
       throw new Error("Agent is not active. Call start() first.");
     }
 
     try {
-      return await this.chatSession.processMessage(message);
+      return await this.mcpClient.processMessage(message);
     } catch (error) {
       this.log(`❌ Error processing message: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
@@ -124,8 +124,8 @@ export class EnhancedAgent {
    */
   getStats(): AgentStats {
     const runtime = Math.round((Date.now() - this.startTime) / 1000);
-    const sessionStats = this.chatSession?.getStats();
-    const toolStats = this.toolManager.getExecutionStats();
+    const sessionStats = this.mcpClient?.getStats();
+    const toolStats = this.toolRegistry.getExecutionStats();
 
     return {
       isRunning: this.isActive,
@@ -148,15 +148,15 @@ export class EnhancedAgent {
    * Get conversation history
    */
   getConversationHistory(): any[] {
-    return this.chatSession?.getConversationHistory() || [];
+    return this.mcpClient?.getConversationHistory() || [];
   }
 
   /**
    * Clear conversation history
    */
   clearHistory(): void {
-    this.chatSession?.clearHistory();
-    this.toolManager.clearHistory();
+    this.mcpClient?.clearHistory();
+    this.toolRegistry.clearHistory();
     this.log("🗑️ Agent history cleared");
   }
 
@@ -164,14 +164,14 @@ export class EnhancedAgent {
    * Get recent errors
    */
   getRecentErrors(): string[] {
-    return this.chatSession?.getRecentErrors() || [];
+    return this.mcpClient?.getRecentErrors() || [];
   }
 
   /**
    * Get tool execution history
    */
   getToolExecutionHistory(): any[] {
-    return this.toolManager.getExecutionHistory();
+    return this.toolRegistry.getExecutionHistory();
   }
 
   /**
@@ -182,14 +182,14 @@ export class EnhancedAgent {
       agent: {
         isActive: this.isActive,
         runtime: Math.round((Date.now() - this.startTime) / 1000),
-        hasSession: !!this.chatSession
+        hasSession: !!this.mcpClient
       },
       server: this.mcpServer.healthCheck(),
       llm: {
         configured: this.llmClient.isConfigured(),
         config: this.llmClient.getConfigSummary()
       },
-      tools: this.toolManager.getExecutionStats(),
+      tools: this.toolRegistry.getExecutionStats(),
       config: this.config.getSummary()
     };
   }
@@ -213,8 +213,8 @@ export class EnhancedAgent {
     this.mcpServer.registerTool(tool);
     
     // Update session system prompt if active
-    if (this.chatSession && this.isActive) {
-      this.chatSession.updateSystemPrompt();
+    if (this.mcpClient && this.isActive) {
+      this.mcpClient.updateSystemPrompt();
     }
     
     this.log(`🔧 Tool added: ${tool.name}`);
@@ -228,8 +228,8 @@ export class EnhancedAgent {
     
     if (result) {
       // Update session system prompt if active
-      if (this.chatSession && this.isActive) {
-        this.chatSession.updateSystemPrompt();
+      if (this.mcpClient && this.isActive) {
+        this.mcpClient.updateSystemPrompt();
       }
       
       this.log(`🗑️ Tool removed: ${toolName}`);
@@ -253,7 +253,7 @@ export class EnhancedAgent {
    * Get available tools
    */
   getAvailableTools(): any[] {
-    return this.toolManager.getToolsInfo();
+    return this.toolRegistry.getToolsInfo();
   }
 
   /**
@@ -264,7 +264,7 @@ export class EnhancedAgent {
       throw new Error("Agent is not active");
     }
 
-    return await this.toolManager.executeTool(toolName, parameters);
+    return await this.toolRegistry.executeTool(toolName, parameters);
   }
 
   /**
@@ -273,7 +273,7 @@ export class EnhancedAgent {
   getSystemContext(): any {
     return {
       agent: this.getStats(),
-      session: this.chatSession?.getContextSummary(),
+      session: this.mcpClient?.getContextSummary(),
       server: this.mcpServer.getStats(),
       config: this.config.getSummary()
     };
@@ -298,13 +298,13 @@ export class EnhancedAgent {
    */
   private async cleanup(): Promise<void> {
     try {
-      if (this.chatSession) {
-        this.chatSession.stop();
-        this.chatSession = null;
+      if (this.mcpClient) {
+        this.mcpClient.stop();
+        this.mcpClient = null;
       }
 
       // Don't cleanup global instances, just clear state
-      this.toolManager.clearHistory();
+      this.toolRegistry.clearHistory();
       
       this.isActive = false;
       
@@ -325,69 +325,69 @@ export class EnhancedAgent {
 }
 
 /**
- * Global enhanced agent instance
+ * Global MCP host instance
  */
-let globalEnhancedAgent: EnhancedAgent | null = null;
+let globalMCPHost: MCPHost | null = null;
 
 /**
- * Create or get the enhanced agent instance
+ * Create or get the MCP host instance
  */
-export function createEnhancedAgent(onLog: (message: string) => void): EnhancedAgent {
-  if (globalEnhancedAgent) {
+export function createEnhancedAgent(onLog: (message: string) => void): MCPHost {
+  if (globalMCPHost) {
     // Update the log function
-    (globalEnhancedAgent as any).onLog = onLog;
-    return globalEnhancedAgent;
+    (globalMCPHost as any).onLog = onLog;
+    return globalMCPHost;
   }
   
-  globalEnhancedAgent = new EnhancedAgent(onLog);
-  return globalEnhancedAgent;
+  globalMCPHost = new MCPHost(onLog);
+  return globalMCPHost;
 }
 
 /**
- * Get the global enhanced agent instance
+ * Get the global MCP host instance
  */
-export function getEnhancedAgent(): EnhancedAgent | null {
-  return globalEnhancedAgent;
+export function getEnhancedAgent(): MCPHost | null {
+  return globalMCPHost;
 }
 
 /**
- * Reset the global enhanced agent (useful for testing)
+ * Reset the global MCP host (useful for testing)
  */
 export function resetEnhancedAgent(): void {
-  if (globalEnhancedAgent) {
-    globalEnhancedAgent.stop();
+  if (globalMCPHost) {
+    globalMCPHost.stop();
   }
-  globalEnhancedAgent = null;
+  globalMCPHost = null;
 }
 
 /**
- * Start the enhanced agent (convenience function)
+ * Start the MCP host (convenience function)
  */
-export async function startEnhancedAgent(onLog: (message: string) => void): Promise<EnhancedAgent> {
+export async function startEnhancedAgent(onLog: (message: string) => void): Promise<MCPHost> {
   const agent = createEnhancedAgent(onLog);
   await agent.start();
   return agent;
 }
 
 /**
- * Stop the enhanced agent (convenience function)
+ * Stop the MCP host (convenience function)
  */
 export async function stopEnhancedAgent(): Promise<void> {
-  if (globalEnhancedAgent) {
-    await globalEnhancedAgent.stop();
+  if (globalMCPHost) {
+    await globalMCPHost.stop();
   }
 }
 
 /**
- * Check if enhanced agent is running
+ * Check if MCP host is running
  */
 export function isEnhancedAgentRunning(): boolean {
-  return globalEnhancedAgent?.isAgentActive() || false;
+  return globalMCPHost?.isAgentActive() || false;
 }
 
 /**
- * Get enhanced agent stats
+ * Get MCP host stats
  */
 export function getEnhancedAgentStats(): AgentStats | null {
-  return globalEnhancedAgent?.getStats() || null;
+  return globalMCPHost?.getStats() || null;
 }

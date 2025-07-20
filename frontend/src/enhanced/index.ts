@@ -11,7 +11,7 @@ export {
   type LLMConfig,
   type AgentConfig,
   type ServerConfig
-} from '../config/Configuration';
+} from '../mcp-host/HostConfiguration';
 
 // Tools
 export { 
@@ -21,14 +21,14 @@ export {
   type ToolInputSchema,
   type ToolResult,
   type ToolHandler
-} from '../tools/Tool';
+} from '../mcp-server/Tool';
 
 export { 
-  ToolManager, 
-  getToolManager, 
-  resetToolManager,
+  ToolRegistry, 
+  getToolRegistry, 
+  resetToolRegistry,
   type ToolInfo
-} from '../tools/ToolManager';
+} from '../mcp-server/ToolRegistry';
 
 export { 
   calculatorTool,
@@ -37,7 +37,7 @@ export {
   listToolsTool,
   enhancedTools,
   enhancedToolsMap
-} from '../tools/EnhancedTools';
+} from '../mcp-server/ServerTools';
 
 // LLM Client
 export { 
@@ -52,25 +52,25 @@ export {
 
 // Session Management
 export { 
-  ChatSession,
+  MCPClient,
   type SessionContext,
   type SessionStats
-} from '../session/ChatSession';
+} from '../mcp/MCPClient';
 
 // Server
 export { 
-  EnhancedMCPServer, 
-  getEnhancedMCPServer, 
-  resetEnhancedMCPServer,
+  MCPServer, 
+  getMCPServer, 
+  resetMCPServer,
   type MCPCapabilities,
   type MCPServerInfo,
   type MCPToolInfo,
   type MCPCallToolResult
-} from '../server/EnhancedMCPServer';
+} from '../mcp-server/MCPServer';
 
 // Agent
 export { 
-  EnhancedAgent,
+  MCPHost,
   createEnhancedAgent,
   getEnhancedAgent,
   resetEnhancedAgent,
@@ -79,23 +79,23 @@ export {
   isEnhancedAgentRunning,
   getEnhancedAgentStats,
   type AgentStats
-} from '../agent/EnhancedAgent';
+} from '../mcp-host/MCPHost';
 
 // Import the functions we need for utility functions
-import { getConfig } from '../config/Configuration';
-import { getEnhancedMCPServer } from '../server/EnhancedMCPServer';
-import { getToolManager } from '../tools/ToolManager';
+import { getConfig } from '../mcp-host/HostConfiguration';
+import { getMCPServer } from '../mcp-server/MCPServer';
+import { getToolRegistry } from '../mcp-server/ToolRegistry';
 import { getLLMClient } from '../llm/LLMClient';
-import { createEnhancedAgent, getEnhancedAgent, resetEnhancedAgent } from '../agent/EnhancedAgent';
-import { resetEnhancedMCPServer } from '../server/EnhancedMCPServer';
-import { resetToolManager } from '../tools/ToolManager';
+import { createEnhancedAgent, getEnhancedAgent, resetEnhancedAgent } from '../mcp-host/MCPHost';
+import { resetMCPServer } from '../mcp-server/MCPServer';
+import { resetToolRegistry } from '../mcp-server/ToolRegistry';
 import { resetLLMClient } from '../llm/LLMClient';
 
 // Convenience function to initialize the entire enhanced system
 export async function initializeEnhancedSystem(onLog: (message: string) => void) {
   const config = getConfig();
-  const server = getEnhancedMCPServer();
-  const toolManager = getToolManager();
+  const server = getMCPServer();
+  const toolRegistry = getToolRegistry();
   const llmClient = getLLMClient();
   const agent = createEnhancedAgent(onLog);
 
@@ -105,7 +105,7 @@ export async function initializeEnhancedSystem(onLog: (message: string) => void)
   return {
     config,
     server,
-    toolManager,
+    toolRegistry,
     llmClient,
     agent
   };
@@ -114,8 +114,8 @@ export async function initializeEnhancedSystem(onLog: (message: string) => void)
 // Health check function
 export function getSystemHealth() {
   const config = getConfig();
-  const server = getEnhancedMCPServer();
-  const toolManager = getToolManager();
+  const server = getMCPServer();
+  const toolRegistry = getToolRegistry();
   const llmClient = getLLMClient();
   const agent = getEnhancedAgent();
 
@@ -131,9 +131,9 @@ export function getSystemHealth() {
       health: server.healthCheck()
     },
     tools: {
-      count: toolManager.getToolCount(),
-      stats: toolManager.getExecutionStats(),
-      validation: toolManager.validateAllTools()
+      count: toolRegistry.getToolCount(),
+      stats: toolRegistry.getExecutionStats(),
+      validation: toolRegistry.validateAllTools()
     },
     llm: {
       configured: llmClient.isConfigured(),
@@ -150,8 +150,8 @@ export function getSystemHealth() {
 // System reset function (useful for testing)
 export function resetEnhancedSystem() {
   resetEnhancedAgent();
-  resetEnhancedMCPServer();
-  resetToolManager();
+  resetMCPServer();
+  resetToolRegistry();
   resetLLMClient();
 }
 

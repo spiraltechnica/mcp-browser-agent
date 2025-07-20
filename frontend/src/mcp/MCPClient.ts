@@ -1,13 +1,13 @@
 /**
- * Chat Session orchestrator following the Python implementation pattern
+ * MCP Client orchestrator following the Python implementation pattern
  * Manages the interaction between user, LLM, and tools
  */
 
-import { ToolManager } from '../tools/ToolManager';
+import { ToolRegistry } from '../mcp-server/ToolRegistry';
 import { LLMClient, Message, ToolCall } from '../llm/LLMClient';
-import { getConfig } from '../config/Configuration';
-import { getMCPTransport } from '../mcp/MCPTransport';
-import { MCPMethods } from '../mcp/MCPProtocol';
+import { getConfig } from '../mcp-host/HostConfiguration';
+import { getMCPTransport } from './MCPTransport';
+import { MCPMethods } from './MCPProtocol';
 import { getDebugEventManager } from '../debug/DebugEventManager';
 
 export interface SessionContext {
@@ -28,17 +28,17 @@ export interface SessionStats {
 }
 
 /**
- * Chat Session class that orchestrates the interaction between user, LLM, and tools
+ * MCP Client class that orchestrates the interaction between user, LLM, and tools
  * Similar to the Python ChatSession class
  */
-export class ChatSession {
+export class MCPClient {
   private isActive = false;
   private context: SessionContext;
   private onLog: (message: string) => void;
   private config = getConfig();
 
   constructor(
-    private toolManager: ToolManager,
+    private toolRegistry: ToolRegistry,
     private llmClient: LLMClient,
     onLog: (message: string) => void
   ) {
@@ -128,7 +128,7 @@ export class ChatSession {
       });
 
       // Get ALL tools for MCP standard format - LLM decides which to use
-      const tools = this.toolManager.getToolsForMCP();
+      const tools = this.toolRegistry.getToolsForMCP();
       
       // Add LLM request debug event
       const requestStartTime = Date.now();
@@ -346,7 +346,7 @@ export class ChatSession {
         }
 
         // Get final response from LLM after tool execution
-        const tools = this.toolManager.getToolsForMCP();
+        const tools = this.toolRegistry.getToolsForMCP();
         
         // Add LLM request for follow-up
         const followUpStartTime = Date.now();
@@ -396,7 +396,7 @@ export class ChatSession {
    */
   private buildSystemPrompt(): string {
     // Use MCP standard format - tools are provided in the tools array, not in system prompt
-    return this.toolManager.buildMCPSystemPrompt();
+    return this.toolRegistry.buildMCPSystemPrompt();
   }
 
   /**
@@ -547,7 +547,7 @@ export class ChatSession {
   } {
     return {
       messageCount: this.context.messages.length,
-      toolCount: this.toolManager.getToolCount(),
+      toolCount: this.toolRegistry.getToolCount(),
       errorCount: this.context.errors.length,
       runtime: Math.round((Date.now() - this.context.startTime) / 1000),
       lastToolResults: Object.fromEntries(this.context.lastToolResults)

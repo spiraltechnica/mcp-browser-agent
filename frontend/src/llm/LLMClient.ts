@@ -3,7 +3,7 @@
  * Manages communication with the LLM provider with proper error handling
  */
 
-import { getConfig, ConfigurationError } from '../config/Configuration';
+import { getConfig, ConfigurationError } from '../mcp-host/HostConfiguration';
 
 export interface ToolCall {
   id: string;
