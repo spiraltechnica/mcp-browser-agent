@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { AgentManager, AgentInstance, createAgentManager } from "../mcp-host/HostManager";
+import { MultiAgentManager, AgentInfo } from "../app/MultiAgentManager";
 import { TokenUsageDisplay } from "./TokenUsageDisplay";
 import { EnhancedDebugPanel, ConversationFlow } from "./MCPDebugPanel";
 import { getDebugEventManager } from "../debug/DebugEventManager";
@@ -23,8 +23,8 @@ interface MultiAgentInterfaceProps {
 }
 
 function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps = {}) {
-  const [agentManager, setAgentManager] = useState<AgentManager | null>(null);
-  const [agents, setAgents] = useState<AgentInstance[]>([]);
+  const [agentManager, setAgentManager] = useState<MultiAgentManager | null>(null);
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [agentChats, setAgentChats] = useState<Map<string, AgentChatState>>(new Map());
   const [logs, setLogs] = useState<Map<string, string>>(new Map());
@@ -42,13 +42,23 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
 
   // Initialize agent manager
   useEffect(() => {
-    const manager = createAgentManager((agentId: string, message: string) => {
-      setLogs(prev => {
-        const newLogs = new Map(prev);
-        const currentLog = newLogs.get(agentId) || "";
-        newLogs.set(agentId, `${currentLog}${currentLog ? '\n' : ''}${message}`);
-        return newLogs;
-      });
+    const manager = new MultiAgentManager((message: string) => {
+      // For multi-agent, we need to parse the agent-specific logs
+      // The message format is "[AgentName] actual message"
+      const agentMatch = message.match(/^\[([^\]]+)\]\s*(.*)$/);
+      if (agentMatch) {
+        const [, agentName, actualMessage] = agentMatch;
+        // Find agent by name to get ID
+        const agent = manager.getAllAgents().find(a => a.name === agentName);
+        if (agent) {
+          setLogs(prev => {
+            const newLogs = new Map(prev);
+            const currentLog = newLogs.get(agent.id) || "";
+            newLogs.set(agent.id, `${currentLog}${currentLog ? '\n' : ''}${actualMessage}`);
+            return newLogs;
+          });
+        }
+      }
     });
     
     setAgentManager(manager);
@@ -85,9 +95,10 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
     }
   }, []);
 
-  const createInitialAgent = async (manager: AgentManager) => {
+  const createInitialAgent = async (manager: MultiAgentManager) => {
     try {
       const agentId = await manager.createAgent("Main Agent");
+      // Don't auto-start the agent - let user start it manually for consistency
       setActiveAgentId(agentId);
       
       // Initialize chat state for the new agent
@@ -149,7 +160,7 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
   const handleRemoveAgent = async (agentId: string) => {
     if (!agentManager) return;
     
-    const agent = agentManager.getAgent(agentId);
+    const agent = agentManager.getAgentInfo(agentId);
     if (!agent) return;
     
     const confirmDelete = window.confirm(`Are you sure you want to remove "${agent.name}"?`);
@@ -316,7 +327,7 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
   const handleRenameAgent = (agentId: string) => {
     if (!agentManager) return;
     
-    const agent = agentManager.getAgent(agentId);
+    const agent = agentManager.getAgentInfo(agentId);
     if (!agent) return;
     
     const newName = prompt(`Enter new name for "${agent.name}":`, agent.name);

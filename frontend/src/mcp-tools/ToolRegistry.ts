@@ -4,7 +4,7 @@
  */
 
 import { Tool, ToolResult } from './Tool';
-import { getConfig } from '../mcp-host/HostConfiguration';
+import { getConfig } from '../app/HostConfiguration';
 import { MCPTool } from '../llm/LLMClient';
 
 export interface ToolInfo {

@@ -5,39 +5,29 @@
 
 // Configuration
 export { 
-  Configuration, 
+  HostConfiguration, 
   getConfig, 
-  ConfigurationError,
   type LLMConfig,
   type AgentConfig,
   type ServerConfig
-} from '../mcp-host/HostConfiguration';
+} from '../app/HostConfiguration';
 
 // Tools
 export { 
   Tool, 
-  createTool, 
-  ToolExecutionError,
-  type ToolInputSchema,
-  type ToolResult,
-  type ToolHandler
-} from '../mcp-server/Tool';
+  type ToolResult
+} from '../mcp-tools/Tool';
 
 export { 
   ToolRegistry, 
   getToolRegistry, 
   resetToolRegistry,
   type ToolInfo
-} from '../mcp-server/ToolRegistry';
+} from '../mcp-tools/ToolRegistry';
 
 export { 
-  calculatorTool,
-  domQueryTool,
-  browserStorageTool,
-  listToolsTool,
-  enhancedTools,
-  enhancedToolsMap
-} from '../mcp-server/ServerTools';
+  enhancedTools
+} from '../mcp-tools/ServerTools';
 
 // LLM Client
 export { 
@@ -45,19 +35,17 @@ export {
   getLLMClient, 
   resetLLMClient,
   LLMError,
+  ConfigurationError,
   type Message,
   type LLMResponse,
   type LLMRequestOptions
 } from '../llm/LLMClient';
 
-// Session Management
+// MCP Core
 export { 
-  MCPClient,
-  type SessionContext,
-  type SessionStats
-} from '../mcp/MCPClient';
+  MCPClient
+} from '../mcp-core/MCPClient';
 
-// Server
 export { 
   MCPServer, 
   getMCPServer, 
@@ -66,29 +54,30 @@ export {
   type MCPServerInfo,
   type MCPToolInfo,
   type MCPCallToolResult
-} from '../mcp-server/MCPServer';
+} from '../mcp-core/MCPServer';
 
-// Agent
 export { 
   MCPHost,
-  createEnhancedAgent,
-  getEnhancedAgent,
-  resetEnhancedAgent,
-  startEnhancedAgent,
-  stopEnhancedAgent,
-  isEnhancedAgentRunning,
-  getEnhancedAgentStats,
-  type AgentStats
-} from '../mcp-host/MCPHost';
+  getMCPHost,
+  resetMCPHost,
+  type MCPContext,
+  type ToolResult as MCPToolResult,
+  type ServerStatus
+} from '../mcp-core/MCPHost';
+
+// Application
+export {
+  ApplicationHost
+} from '../app/ApplicationHost';
 
 // Import the functions we need for utility functions
-import { getConfig } from '../mcp-host/HostConfiguration';
-import { getMCPServer } from '../mcp-server/MCPServer';
-import { getToolRegistry } from '../mcp-server/ToolRegistry';
+import { getConfig } from '../app/HostConfiguration';
+import { getMCPServer } from '../mcp-core/MCPServer';
+import { getToolRegistry } from '../mcp-tools/ToolRegistry';
 import { getLLMClient } from '../llm/LLMClient';
-import { createEnhancedAgent, getEnhancedAgent, resetEnhancedAgent } from '../mcp-host/MCPHost';
-import { resetMCPServer } from '../mcp-server/MCPServer';
-import { resetToolRegistry } from '../mcp-server/ToolRegistry';
+import { getMCPHost, resetMCPHost } from '../mcp-core/MCPHost';
+import { resetMCPServer } from '../mcp-core/MCPServer';
+import { resetToolRegistry } from '../mcp-tools/ToolRegistry';
 import { resetLLMClient } from '../llm/LLMClient';
 
 // Convenience function to initialize the entire enhanced system
@@ -97,7 +86,7 @@ export async function initializeEnhancedSystem(onLog: (message: string) => void)
   const server = getMCPServer();
   const toolRegistry = getToolRegistry();
   const llmClient = getLLMClient();
-  const agent = createEnhancedAgent(onLog);
+  const mcpHost = getMCPHost();
 
   // Initialize server
   await server.initialize();
@@ -107,7 +96,7 @@ export async function initializeEnhancedSystem(onLog: (message: string) => void)
     server,
     toolRegistry,
     llmClient,
-    agent
+    mcpHost
   };
 }
 
@@ -117,7 +106,7 @@ export function getSystemHealth() {
   const server = getMCPServer();
   const toolRegistry = getToolRegistry();
   const llmClient = getLLMClient();
-  const agent = getEnhancedAgent();
+  const mcpHost = getMCPHost();
 
   return {
     timestamp: new Date().toISOString(),
@@ -139,17 +128,16 @@ export function getSystemHealth() {
       configured: llmClient.isConfigured(),
       config: llmClient.getConfigSummary()
     },
-    agent: {
-      exists: !!agent,
-      active: agent?.isAgentActive() || false,
-      stats: agent?.getStats() || null
+    mcpHost: {
+      serverCount: mcpHost.getServerCount(),
+      hasConnectedServers: mcpHost.hasConnectedServers()
     }
   };
 }
 
 // System reset function (useful for testing)
 export function resetEnhancedSystem() {
-  resetEnhancedAgent();
+  resetMCPHost();
   resetMCPServer();
   resetToolRegistry();
   resetLLMClient();

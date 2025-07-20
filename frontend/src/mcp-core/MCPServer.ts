@@ -4,10 +4,10 @@
  * Now supports JSON-RPC communication for true MCP compliance
  */
 
-import { getConfig } from '../mcp-host/HostConfiguration';
-import { ToolRegistry, getToolRegistry } from './ToolRegistry';
-import { Tool } from './Tool';
-import { enhancedTools } from './ServerTools';
+import { getConfig } from '../app/HostConfiguration';
+import { ToolRegistry, getToolRegistry } from '../mcp-tools/ToolRegistry';
+import { Tool } from '../mcp-tools/Tool';
+import { enhancedTools } from '../mcp-tools/ServerTools';
 import { 
   JsonRpcRequest, 
   JsonRpcResponse, 
@@ -18,8 +18,8 @@ import {
   ToolsListResponse,
   ToolCallRequest,
   ToolCallResponse
-} from '../mcp/MCPProtocol';
-import { getMCPTransport } from '../mcp/MCPTransport';
+} from './MCPProtocol';
+import { getMCPTransport } from './MCPTransport';
 
 export interface MCPCapabilities {
   tools?: {

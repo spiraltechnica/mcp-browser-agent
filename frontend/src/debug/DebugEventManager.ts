@@ -1,4 +1,4 @@
-import { DebugEvent, ConversationFlow } from '../components/EnhancedDebugPanel';
+import { DebugEvent, ConversationFlow } from '../components/MCPDebugPanel';
 
 export type DebugEventCallback = (event: DebugEvent) => void;
 export type ConversationFlowCallback = (flow: ConversationFlow) => void;

@@ -460,7 +460,9 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
                                     borderRadius: '4px',
                                     fontSize: '11px',
                                     overflow: 'auto',
-                                    maxHeight: '200px'
+                                    maxHeight: '200px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word'
                                   }}>
                                     {typeof event.data.result === 'string' ? event.data.result : formatJson(event.data.result)}
                                   </pre>

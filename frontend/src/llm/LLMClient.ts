@@ -3,7 +3,15 @@
  * Manages communication with the LLM provider with proper error handling
  */
 
-import { getConfig, ConfigurationError } from '../mcp-host/HostConfiguration';
+import { getConfig } from '../app/HostConfiguration';
+
+// Define ConfigurationError locally since it's not exported from HostConfiguration
+export class ConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigurationError';
+  }
+}
 
 export interface ToolCall {
   id: string;
@@ -103,10 +111,8 @@ export class LLMClient {
   private onDebugUpdate?: (debugInfo: LLMDebugInfo) => void;
 
   constructor() {
-    // Validate configuration on initialization
-    if (!this.config.hasApiKey) {
-      console.warn('LLM API key not configured. Some features may not work.');
-    }
+    // Frontend doesn't need to validate API key - backend handles this
+    console.log('LLM Client initialized - API key handled by backend');
   }
 
   /**
@@ -144,10 +150,7 @@ export class LLMClient {
         throw new LLMError('Messages array is required and cannot be empty');
       }
 
-      // Validate API key
-      if (!this.config.hasApiKey) {
-        throw new ConfigurationError('LLM API key not configured');
-      }
+      // API key validation is handled by backend
 
       // Build request options
       const llmConfig = this.config.llmConfig;

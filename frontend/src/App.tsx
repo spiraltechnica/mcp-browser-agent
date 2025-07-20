@@ -1,12 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { 
-  startEnhancedAgent, 
-  stopEnhancedAgent, 
-  isEnhancedAgentRunning, 
-  getEnhancedAgentStats,
-  createEnhancedAgent 
-} from "./mcp-host/MCPHost";
-import { getMCPServer } from "./mcp-server/MCPServer";
+import { ApplicationHost } from "./app/ApplicationHost";
+import { getMCPServer } from "./mcp-core/MCPServer";
 import { getLLMClient, LLMDebugInfo } from "./llm/LLMClient";
 import { EnhancedDebugPanel, ConversationFlow } from "./components/MCPDebugPanel";
 import { getDebugEventManager } from "./debug/DebugEventManager";
@@ -40,6 +34,11 @@ function App() {
   const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
   const [isDebugPanelVisible, setIsDebugPanelVisible] = useState(false);
   
+  // Application Host instance
+  const [applicationHost] = useState(() => new ApplicationHost((msg: string) => {
+    setLog(prev => `${prev}${prev ? '\n' : ''}${msg}`);
+  }));
+  
   // Refs for auto-scrolling and input focus
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const logScrollRef = useRef<HTMLDivElement>(null);
@@ -55,12 +54,11 @@ function App() {
     setLog(""); // Clear previous logs
     
     try {
-      // Use the enhanced agent instead of the old one
-      await startEnhancedAgent(addLog);
+      await applicationHost.initialize();
       setIsRunning(true);
-      addLog("✅ Enhanced MCP Agent started successfully!");
+      addLog("✅ MCP Browser Agent started successfully!");
     } catch (error) {
-      addLog(`❌ Failed to start Enhanced Agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      addLog(`❌ Failed to start Application: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -68,11 +66,11 @@ function App() {
     if (!isRunning) return;
     
     try {
-      await stopEnhancedAgent();
+      await applicationHost.stop();
       setIsRunning(false);
-      addLog("🛑 Enhanced Agent stopped by user");
+      addLog("🛑 Application stopped by user");
     } catch (error) {
-      addLog(`⚠️ Error stopping Enhanced Agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      addLog(`⚠️ Error stopping Application: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsRunning(false);
     }
   };
@@ -98,12 +96,9 @@ function App() {
     }]);
 
     try {
-      // Try to use the enhanced agent if it's running
-      const enhancedAgent = createEnhancedAgent(addLog);
-      
-      if (isEnhancedAgentRunning()) {
-        // Use the enhanced agent's chat session
-        const response = await enhancedAgent.processMessage(userMessage);
+      if (applicationHost.isApplicationActive()) {
+        // Use the application host to process the message
+        const response = await applicationHost.processMessage(userMessage);
         
         setChatHistory(prev => [...prev, {
           role: 'assistant',
@@ -233,22 +228,22 @@ function App() {
   // Update stats and running status periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      // Check enhanced agent system only
-      const running = isEnhancedAgentRunning();
+      // Check application host status
+      const running = applicationHost.isApplicationActive();
       
       setIsRunning(running);
       
       if (running) {
-        // Get enhanced agent stats
-        const enhancedStats = getEnhancedAgentStats();
-        setStats(enhancedStats);
+        // Get application host stats
+        const appStats = applicationHost.getStats();
+        setStats(appStats);
       } else {
         setStats(null);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [applicationHost]);
 
   // Load available tools
   useEffect(() => {
