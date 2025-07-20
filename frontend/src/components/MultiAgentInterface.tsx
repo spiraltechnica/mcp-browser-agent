@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { AgentManager, AgentInstance, createAgentManager } from "../agent/AgentManager";
 import { TokenUsageDisplay } from "./TokenUsageDisplay";
+import { EnhancedDebugPanel, ConversationFlow } from "./EnhancedDebugPanel";
+import { getDebugEventManager } from "../debug/DebugEventManager";
+import { getLLMClient, LLMDebugInfo } from "../llm/LLMClient";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -28,6 +31,9 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [debugHistory, setDebugHistory] = useState<LLMDebugInfo[]>([]);
+  const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
+  const [isDebugPanelVisible, setIsDebugPanelVisible] = useState(false);
   
   // Refs for auto-scrolling and input focus
   const chatScrollRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -349,6 +355,49 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
   const activeChatState = activeAgentId ? agentChats.get(activeAgentId) : null;
   const activeLog = activeAgentId ? logs.get(activeAgentId) || "" : "";
 
+  // Setup Enhanced Debug Event Manager
+  useEffect(() => {
+    const debugManager = getDebugEventManager();
+    
+    // Subscribe to conversation flow updates
+    const unsubscribeFlow = debugManager.onFlow((flow: ConversationFlow) => {
+      setConversationFlows(prev => {
+        // Keep only last 20 flows
+        const newFlows = [...prev, flow];
+        if (newFlows.length > 20) {
+          newFlows.shift();
+        }
+        return newFlows;
+      });
+    });
+
+    // Load existing conversation flows
+    setConversationFlows(debugManager.getConversationFlows());
+
+    // Also keep the old LLM debug callback for backward compatibility
+    const llmClient = getLLMClient();
+    
+    const handleDebugUpdate = (debugInfo: LLMDebugInfo) => {
+      setDebugHistory(prev => {
+        // Keep only last 50 entries
+        const newHistory = [...prev, debugInfo];
+        if (newHistory.length > 50) {
+          newHistory.shift();
+        }
+        return newHistory;
+      });
+    };
+
+    llmClient.setDebugCallback(handleDebugUpdate);
+    setDebugHistory(llmClient.getDebugHistory());
+
+    return () => {
+      // Clean up callbacks on unmount
+      unsubscribeFlow();
+      llmClient.setDebugCallback(() => {});
+    };
+  }, []);
+
   // Focus chat input after processing is complete for the active agent
   useEffect(() => {
     if (activeAgentId && activeChatState && !activeChatState.isProcessing) {
@@ -358,6 +407,10 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
       }
     }
   }, [activeAgentId, activeChatState?.isProcessing]);
+
+  const handleToggleDebugPanel = () => {
+    setIsDebugPanelVisible(!isDebugPanelVisible);
+  };
 
   return (
     <div style={{ 
@@ -577,7 +630,8 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
           border: '1px solid #e2e8f0',
           borderTop: 'none',
           borderRadius: '0 0 8px 8px',
-          padding: '20px'
+          padding: '20px',
+          marginBottom: '20px'
         }}>
           {/* Agent Controls */}
           <div style={{ 
@@ -913,7 +967,8 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
           borderTop: 'none',
           borderRadius: '0 0 8px 8px',
           padding: '40px',
-          textAlign: 'center'
+          textAlign: 'center',
+          marginBottom: '20px'
         }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>🤖</div>
           <h2 style={{ color: '#1e293b', marginBottom: '10px' }}>No Agent Selected</h2>
@@ -922,6 +977,13 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
           </p>
         </div>
       )}
+
+      {/* Enhanced Debug Panel */}
+      <EnhancedDebugPanel 
+        conversationFlows={conversationFlows}
+        isVisible={isDebugPanelVisible}
+        onToggle={handleToggleDebugPanel}
+      />
 
       <footer style={{ 
         textAlign: 'center', 
