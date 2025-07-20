@@ -117,30 +117,32 @@ export class DebugEventManager {
   }
 
   /**
-   * Add LLM request event
+   * Add LLM request event with raw HTTP data
    */
-  addLLMRequest(requestPayload: any): string {
+  addLLMRequest(requestPayload: any, rawRequestBody?: string): string {
     return this.addEvent('llm_request', {
       model: requestPayload.model,
       messages: requestPayload.messages,
       tools: requestPayload.tools,
       temperature: requestPayload.temperature,
       max_tokens: requestPayload.max_tokens,
-      fullPayload: requestPayload
+      fullPayload: requestPayload,
+      rawRequestBody: rawRequestBody || JSON.stringify(requestPayload, null, 2)
     });
   }
 
   /**
-   * Add LLM response event
+   * Add LLM response event with raw HTTP data
    */
-  addLLMResponse(responsePayload: any, requestEventId?: string, duration?: number): string {
+  addLLMResponse(responsePayload: any, requestEventId?: string, duration?: number, rawResponseBody?: string): string {
     return this.addEvent('llm_response', {
       content: responsePayload.content,
       tool_calls: responsePayload.tool_calls,
       usage: responsePayload.usage,
       model: responsePayload.model,
       finishReason: responsePayload.finishReason,
-      fullPayload: responsePayload
+      fullPayload: responsePayload,
+      rawResponseBody: rawResponseBody || JSON.stringify(responsePayload, null, 2)
     }, duration, requestEventId);
   }
 

@@ -37,6 +37,9 @@ export interface LLMResponse {
   responsePayload?: any;
   requestTime?: number;
   responseTime?: number;
+  // Raw HTTP data for accurate debugging
+  rawRequestBody?: string;
+  rawResponseBody?: string;
 }
 
 export interface LLMDebugInfo {
@@ -214,6 +217,9 @@ export class LLMClient {
       payload.tool_choice = options.tool_choice || "auto";
     }
 
+    // Capture the raw request body that will be sent
+    const rawRequestBody = JSON.stringify(payload);
+
     console.log(`🌐 [${requestId}] Sending request to backend ${apiConfig.llmEndpoint}`);
     console.log(`⚙️ [${requestId}] Request config:`, {
       model: payload.model,
@@ -238,7 +244,7 @@ export class LLMClient {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(payload),
+        body: rawRequestBody,
         signal: controller.signal
       });
 
@@ -293,9 +299,9 @@ export class LLMClient {
         throw new LLMError(errorMessage, response.status, errorText);
       }
 
-      // Parse response
-      const responseText = await response.text();
-      console.log(`📥 [${requestId}] Raw response length: ${responseText.length} characters`);
+      // Capture the raw response text before any processing
+      const rawResponseBody = await response.text();
+      console.log(`📥 [${requestId}] Raw response length: ${rawResponseBody.length} characters`);
 
       // Try to parse as JSON first (for structured responses)
       let content: string | null = null;
@@ -304,7 +310,7 @@ export class LLMClient {
       let responsePayload: any;
       
       try {
-        responsePayload = JSON.parse(responseText);
+        responsePayload = JSON.parse(rawResponseBody);
         
         // Handle backend fallback responses
         if (responsePayload.fallback) {
@@ -320,8 +326,8 @@ export class LLMClient {
       } catch (parseError) {
         // If JSON parsing fails, treat as plain text response
         console.log(`📝 [${requestId}] Treating response as plain text`);
-        content = responseText;
-        responsePayload = { content: responseText, raw: true };
+        content = rawResponseBody;
+        responsePayload = { content: rawResponseBody, raw: true };
       }
 
       console.log(`📊 [${requestId}] Token usage:`, usage);
@@ -330,7 +336,7 @@ export class LLMClient {
         console.log(`🔧 [${requestId}] Tool calls: ${tool_calls.length}`);
       }
 
-      // Create debug info
+      // Create debug info with raw HTTP data
       const debugInfo: LLMDebugInfo = {
         id: `req-${requestId}`,
         timestamp: requestTime,
@@ -354,7 +360,9 @@ export class LLMClient {
         requestPayload: payload,
         responsePayload,
         requestTime,
-        responseTime
+        responseTime,
+        rawRequestBody,
+        rawResponseBody
       };
 
     } catch (error) {

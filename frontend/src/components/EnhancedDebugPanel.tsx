@@ -28,6 +28,7 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
   const [selectedFlow, setSelectedFlow] = useState<ConversationFlow | null>(null);
   const [expandedEvents, setExpandedEvents] = useState<{[key: string]: boolean}>({});
   const [filterType, setFilterType] = useState<string>('all');
+  const [copiedButtons, setCopiedButtons] = useState<{[key: string]: boolean}>({});
 
   const toggleEvent = (eventId: string) => {
     setExpandedEvents(prev => ({
@@ -36,9 +37,13 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
     }));
   };
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async (text: string, buttonId: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      setCopiedButtons(prev => ({ ...prev, [buttonId]: true }));
+      setTimeout(() => {
+        setCopiedButtons(prev => ({ ...prev, [buttonId]: false }));
+      }, 2000);
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
     }
@@ -46,6 +51,16 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
 
   const formatJson = (obj: any): string => {
     return JSON.stringify(obj, null, 2);
+  };
+
+  const formatRawJson = (rawText: string): string => {
+    try {
+      const parsed = JSON.parse(rawText);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      // If it's not valid JSON, return as-is
+      return rawText;
+    }
   };
 
   const formatTimestamp = (timestamp: number): string => {
@@ -90,10 +105,17 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
   const getEventTitle = (event: DebugEvent): string => {
     switch (event.type) {
       case 'user_message': return 'User Message';
-      case 'llm_request': return `LLM Request (${event.data.model || 'Unknown'})`;
+      case 'llm_request': 
+        // Find corresponding response to get prompt tokens
+        const correspondingResponse = selectedFlow?.events.find(e => 
+          e.type === 'llm_response' && e.parentId === event.id
+        );
+        const promptTokens = correspondingResponse?.data.usage?.prompt_tokens;
+        const tokenInfo = promptTokens ? ` • ${promptTokens} prompt tokens` : '';
+        return `LLM Request (${event.data.model || 'Unknown'})${tokenInfo}`;
       case 'llm_response': 
-        const tokens = event.data.usage ? ` • ${event.data.usage.total_tokens} tokens` : '';
-        return `LLM Response${tokens}`;
+        const completionTokens = event.data.usage ? ` • ${event.data.usage.completion_tokens} completion tokens` : '';
+        return `LLM Response${completionTokens}`;
       case 'tool_call_parsed': return `Tool Call Parsed: ${event.data.toolName || 'Unknown'}`;
       case 'tool_execution': return `Tool Execution: ${event.data.toolName || 'Unknown'}`;
       case 'tool_result': return `Tool Result: ${event.data.toolName || 'Unknown'}`;
@@ -342,22 +364,26 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  copyToClipboard(formatJson(event.data));
-                                }}
-                                style={{
-                                  padding: '4px 8px',
-                                  fontSize: '10px',
-                                  backgroundColor: '#f1f5f9',
-                                  border: '1px solid #e2e8f0',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                Copy
-                              </button>
+                              {/* Only show copy button for non-LLM events */}
+                              {event.type !== 'llm_request' && event.type !== 'llm_response' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    copyToClipboard(formatJson(event.data), `copy-${event.id}`);
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '10px',
+                                    backgroundColor: copiedButtons[`copy-${event.id}`] ? '#dcfce7' : '#f1f5f9',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    color: copiedButtons[`copy-${event.id}`] ? '#166534' : 'inherit'
+                                  }}
+                                >
+                                  {copiedButtons[`copy-${event.id}`] ? 'Copied!' : 'Copy'}
+                                </button>
+                              )}
                               <span style={{ fontSize: '12px' }}>
                                 {expandedEvents[event.id] ? '▼' : '▶'}
                               </span>
@@ -481,10 +507,35 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
                                       </div>
                                     </div>
                                   </div>
-                                  <div>
-                                    <h5 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#1e293b', fontWeight: '600' }}>
-                                      Full Request JSON:
-                                    </h5>
+                                  <div style={{ maxWidth: '600px' }}>
+                                    <div style={{ 
+                                      display: 'flex', 
+                                      justifyContent: 'space-between', 
+                                      alignItems: 'center',
+                                      marginBottom: '10px'
+                                    }}>
+                                      <h5 style={{ margin: 0, fontSize: '12px', color: '#1e293b', fontWeight: '600' }}>
+                                        Full Request JSON (Raw HTTP Body):
+                                      </h5>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const rawData = event.data.rawRequestBody || formatJson(event.data);
+                                          copyToClipboard(formatRawJson(rawData), `request-json-${event.id}`);
+                                        }}
+                                        style={{
+                                          padding: '4px 8px',
+                                          fontSize: '10px',
+                                          backgroundColor: copiedButtons[`request-json-${event.id}`] ? '#dcfce7' : '#f1f5f9',
+                                          border: '1px solid #e2e8f0',
+                                          borderRadius: '4px',
+                                          cursor: 'pointer',
+                                          color: copiedButtons[`request-json-${event.id}`] ? '#166534' : 'inherit'
+                                        }}
+                                      >
+                                        {copiedButtons[`request-json-${event.id}`] ? 'Copied!' : 'Copy JSON'}
+                                      </button>
+                                    </div>
                                     <pre style={{
                                       backgroundColor: '#1e293b',
                                       color: '#e2e8f0',
@@ -499,7 +550,7 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
                                       whiteSpace: 'pre-wrap',
                                       wordBreak: 'break-word'
                                     }}>
-                                      {formatJson(event.data)}
+                                      {formatRawJson(event.data.rawRequestBody || formatJson(event.data))}
                                     </pre>
                                   </div>
                                 </div>
@@ -593,10 +644,35 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
                                     )}
                                   </div>
                                   
-                                  <div>
-                                    <h5 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#1e293b', fontWeight: '600' }}>
-                                      Full Response JSON:
-                                    </h5>
+                                  <div style={{ maxWidth: '600px' }}>
+                                    <div style={{ 
+                                      display: 'flex', 
+                                      justifyContent: 'space-between', 
+                                      alignItems: 'center',
+                                      marginBottom: '10px'
+                                    }}>
+                                      <h5 style={{ margin: 0, fontSize: '12px', color: '#1e293b', fontWeight: '600' }}>
+                                        Full Response JSON (Raw HTTP Body):
+                                      </h5>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const rawData = event.data.rawResponseBody || formatJson(event.data);
+                                          copyToClipboard(formatRawJson(rawData), `response-json-${event.id}`);
+                                        }}
+                                        style={{
+                                          padding: '4px 8px',
+                                          fontSize: '10px',
+                                          backgroundColor: copiedButtons[`response-json-${event.id}`] ? '#dcfce7' : '#f1f5f9',
+                                          border: '1px solid #e2e8f0',
+                                          borderRadius: '4px',
+                                          cursor: 'pointer',
+                                          color: copiedButtons[`response-json-${event.id}`] ? '#166534' : 'inherit'
+                                        }}
+                                      >
+                                        {copiedButtons[`response-json-${event.id}`] ? 'Copied!' : 'Copy JSON'}
+                                      </button>
+                                    </div>
                                     <pre style={{
                                       backgroundColor: '#1e293b',
                                       color: '#e2e8f0',
@@ -611,7 +687,7 @@ export function EnhancedDebugPanel({ conversationFlows, isVisible, onToggle }: E
                                       whiteSpace: 'pre-wrap',
                                       wordBreak: 'break-word'
                                     }}>
-                                      {formatJson(event.data)}
+                                      {formatRawJson(event.data.rawResponseBody || formatJson(event.data))}
                                     </pre>
                                   </div>
                                 </div>

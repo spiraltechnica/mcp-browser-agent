@@ -134,17 +134,25 @@ export class ChatSession {
       const requestStartTime = Date.now();
       const requestPayload = {
         messages: this.context.messages,
-        tools: tools.length > 0 ? tools : undefined
+        tools: tools.length > 0 ? tools : undefined,
+        model: this.config.llmConfig.model,
+        temperature: this.config.llmConfig.temperature,
+        max_tokens: this.config.llmConfig.maxTokens
       };
-      const requestEventId = debugManager.addLLMRequest(requestPayload);
+      const requestEventId = debugManager.addLLMRequest(requestPayload, JSON.stringify(requestPayload, null, 2));
       
       const llmResponse = await this.llmClient.getResponse(this.context.messages, {
         tools: tools.length > 0 ? tools : undefined
       });
       
-      // Add LLM response debug event
+      // Add LLM response debug event with raw data
       const requestDuration = Date.now() - requestStartTime;
-      debugManager.addLLMResponse(llmResponse, requestEventId, requestDuration);
+      debugManager.addLLMResponse(
+        llmResponse, 
+        requestEventId, 
+        requestDuration, 
+        llmResponse.rawResponseBody
+      );
       
       this.log(`🤖 LLM Response: ${llmResponse.content || 'Tool calls detected'}`);
       if (llmResponse.tool_calls && llmResponse.tool_calls.length > 0) {
@@ -344,9 +352,12 @@ export class ChatSession {
         const followUpStartTime = Date.now();
         const followUpRequestPayload = {
           messages: this.context.messages,
-          tools: tools.length > 0 ? tools : undefined
+          tools: tools.length > 0 ? tools : undefined,
+          model: this.config.llmConfig.model,
+          temperature: this.config.llmConfig.temperature,
+          max_tokens: this.config.llmConfig.maxTokens
         };
-        const followUpRequestEventId = debugManager.addLLMRequest(followUpRequestPayload);
+        const followUpRequestEventId = debugManager.addLLMRequest(followUpRequestPayload, JSON.stringify(followUpRequestPayload, null, 2));
         
         const finalResponse = await this.llmClient.getResponse(this.context.messages, {
           tools: tools.length > 0 ? tools : undefined
@@ -354,7 +365,7 @@ export class ChatSession {
 
         // Add LLM response for follow-up
         const followUpDuration = Date.now() - followUpStartTime;
-        debugManager.addLLMResponse(finalResponse, followUpRequestEventId, followUpDuration);
+        debugManager.addLLMResponse(finalResponse, followUpRequestEventId, followUpDuration, finalResponse.rawResponseBody);
 
         this.log(`🔄 Final response: ${finalResponse.content || 'Additional tool calls detected'}`);
 

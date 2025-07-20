@@ -29,9 +29,10 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
   const [newAgentName, setNewAgentName] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   
-  // Refs for auto-scrolling
+  // Refs for auto-scrolling and input focus
   const chatScrollRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const logScrollRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const chatInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
   // Initialize agent manager
   useEffect(() => {
@@ -46,8 +47,36 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
     
     setAgentManager(manager);
     
-    // Create initial agent
-    createInitialAgent(manager);
+    // Check if agents already exist before creating initial agent
+    const existingAgents = manager.getAllAgents();
+    if (existingAgents.length === 0) {
+      // Only create initial agent if no agents exist
+      createInitialAgent(manager);
+    } else {
+      // Use existing agents
+      setAgents(existingAgents);
+      
+      // Set the first agent as active if none is selected
+      if (!activeAgentId && existingAgents.length > 0) {
+        setActiveAgentId(existingAgents[0].id);
+      }
+      
+      // Initialize chat states for existing agents
+      existingAgents.forEach(agent => {
+        setAgentChats(prev => {
+          const newChats = new Map(prev);
+          if (!newChats.has(agent.id)) {
+            newChats.set(agent.id, {
+              agentId: agent.id,
+              chatHistory: [],
+              chatInput: "",
+              isProcessing: false
+            });
+          }
+          return newChats;
+        });
+      });
+    }
   }, []);
 
   const createInitialAgent = async (manager: AgentManager) => {
@@ -319,6 +348,16 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
   const activeAgent = activeAgentId ? agents.find(a => a.id === activeAgentId) : null;
   const activeChatState = activeAgentId ? agentChats.get(activeAgentId) : null;
   const activeLog = activeAgentId ? logs.get(activeAgentId) || "" : "";
+
+  // Focus chat input after processing is complete for the active agent
+  useEffect(() => {
+    if (activeAgentId && activeChatState && !activeChatState.isProcessing) {
+      const inputRef = chatInputRefs.current.get(activeAgentId);
+      if (inputRef) {
+        inputRef.focus();
+      }
+    }
+  }, [activeAgentId, activeChatState?.isProcessing]);
 
   return (
     <div style={{ 
@@ -722,6 +761,7 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
               {/* Chat Input */}
               <form onSubmit={(e) => handleChatSubmit(activeAgent.id, e)} style={{ display: 'flex', gap: '10px' }}>
                 <input
+                  ref={(el) => chatInputRefs.current.set(activeAgent.id, el)}
                   type="text"
                   value={activeChatState.chatInput}
                   onChange={(e) => handleChatInputChange(activeAgent.id, e.target.value)}

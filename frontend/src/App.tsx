@@ -40,9 +40,10 @@ function App() {
   const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
   const [isDebugPanelVisible, setIsDebugPanelVisible] = useState(false);
   
-  // Refs for auto-scrolling
+  // Refs for auto-scrolling and input focus
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const logScrollRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
 
   const addLog = useCallback((msg: string) => {
     setLog(prev => `${prev}${prev ? '\n' : ''}${msg}`);
@@ -178,6 +179,13 @@ function App() {
       logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
     }
   }, [log]);
+
+  // Focus chat input after processing is complete
+  useEffect(() => {
+    if (!isProcessingChat && chatInputRef.current) {
+      chatInputRef.current.focus();
+    }
+  }, [isProcessingChat]);
 
   // Setup Enhanced Debug Event Manager
   useEffect(() => {
@@ -505,6 +513,7 @@ function App() {
         {/* Chat Input */}
         <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: '10px' }}>
           <input
+            ref={chatInputRef}
             type="text"
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
