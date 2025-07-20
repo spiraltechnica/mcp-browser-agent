@@ -105,6 +105,229 @@ Frontend Components:
 └── Configuration Management (config/)
 ```
 
+## 🏛️ MCP Architecture in the Browser
+
+### True MCP Implementation
+
+This system implements a **complete Model Context Protocol (MCP) architecture** entirely within the browser. Unlike traditional MCP deployments that span multiple processes, this innovative implementation runs all MCP components in a single browser context while maintaining proper architectural boundaries and protocol compliance.
+
+### MCP Component Mapping
+
+According to the [official MCP specification](https://modelcontextprotocol.io/specification/2025-06-18/architecture), MCP follows a **Host ↔ Client ↔ Server** architecture. Here's how our browser implementation maps to these roles:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      MCP HOST                               │
+│              React App + Enhanced Agent                     │
+│                                                             │
+│  • Creates and manages MCP client                          │
+│  • Controls connection permissions                         │
+│  • Handles user authorization                              │
+│  • Coordinates AI/LLM integration                          │
+│  • Manages context aggregation                             │
+│                                                             │
+│  ┌─────────────────────┐    ┌─────────────────────────┐    │
+│  │     MCP CLIENT      │◄──►│     MCP SERVER          │    │
+│  │  ChatSession +      │    │  EnhancedMCPServer      │    │
+│  │  LLMClient          │    │                         │    │
+│  │                     │    │  • Exposes tools        │    │
+│  │  • Maintains        │    │  • Handles execution    │    │
+│  │    stateful session │    │  • Manages resources    │    │
+│  │  • Protocol         │    │  • Capability           │    │
+│  │    negotiation      │    │    negotiation          │    │
+│  │  • Message routing  │    │  • Security boundaries │    │
+│  └─────────────────────┘    └─────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                    Browser Process
+```
+
+#### **MCP Host** (`App.tsx` + `EnhancedAgent.ts`)
+- **Role**: Container and coordinator for the entire MCP ecosystem
+- **Responsibilities**:
+  - Creates and manages the MCP client instance
+  - Controls client connection permissions and lifecycle
+  - Enforces security policies and user consent
+  - Handles user authorization decisions
+  - Coordinates AI/LLM integration and sampling requests
+  - Manages context aggregation across the system
+  - Provides the user interface and interaction layer
+
+#### **MCP Client** (`ChatSession.ts` + `LLMClient.ts`)
+- **Role**: Protocol client maintaining 1:1 connection with MCP server
+- **Responsibilities**:
+  - Establishes stateful session with the MCP server
+  - Handles protocol negotiation and capability exchange
+  - Routes protocol messages bidirectionally
+  - Manages subscriptions and notifications
+  - Maintains security boundaries
+  - Coordinates conversation flow and tool execution requests
+
+#### **MCP Server** (`EnhancedMCPServer.ts`)
+- **Role**: Provides specialized context and capabilities
+- **Responsibilities**:
+  - Exposes resources, tools, and prompts via MCP primitives
+  - Operates independently with focused responsibilities
+  - Handles tool registration and execution
+  - Manages capability negotiation
+  - Maintains proper security constraints
+  - Provides health monitoring and statistics
+
+### Browser-Specific MCP Implementation
+
+#### **Transport Adaptation**
+Traditional MCP uses JSON-RPC over stdio or HTTP between separate processes. Our browser implementation adapts this by:
+
+- **Direct Function Calls**: Client-server communication via JavaScript function calls
+- **Maintained Protocol**: Still follows MCP message patterns and capability negotiation
+- **Stateful Sessions**: Proper session management despite in-memory communication
+- **Security Boundaries**: Logical isolation between components
+
+#### **Capability Negotiation**
+The system implements proper MCP capability negotiation:
+
+```typescript
+// Server capabilities declaration
+const serverInfo: MCPServerInfo = {
+  name: "browser-mcp-server",
+  version: "1.0.0", 
+  protocolVersion: "2025-11-05",
+  capabilities: {
+    tools: { listChanged: true },
+    resources: { subscribe: true, listChanged: true }
+  }
+};
+
+// Client capability handling
+const tools = this.toolManager.getToolsForMCP();
+const llmResponse = await this.llmClient.getResponse(messages, {
+  tools: tools.length > 0 ? tools : undefined
+});
+```
+
+#### **MCP Protocol Flow in Browser**
+
+```mermaid
+sequenceDiagram
+    participant Host as MCP Host<br/>(React App)
+    participant Client as MCP Client<br/>(ChatSession)
+    participant Server as MCP Server<br/>(EnhancedMCPServer)
+    participant LLM as LLM<br/>(via Backend)
+
+    Host->>Client: Initialize MCP client
+    Client->>Server: Initialize session with capabilities
+    Server-->>Client: Respond with server capabilities
+    
+    Host->>Client: User message
+    Client->>Server: List available tools
+    Server-->>Client: Tool definitions
+    Client->>LLM: Request with tools
+    LLM-->>Client: Response with tool calls
+    
+    loop Tool Execution
+        Client->>Server: Call tool(name, args)
+        Server-->>Client: Tool result
+    end
+    
+    Client->>LLM: Final request with tool results
+    LLM-->>Client: Natural language response
+    Client-->>Host: Final response
+```
+
+### MCP Design Principles Compliance
+
+Our implementation adheres to all core MCP design principles:
+
+#### 1. **Servers are extremely easy to build**
+```typescript
+// Simple tool registration
+const calculatorTool = createTool(
+  'calculator',
+  'Calculate mathematical expressions',
+  schema,
+  async (args) => {
+    return { success: true, data: { result: evaluate(args.expression) } };
+  }
+);
+
+mcpServer.registerTool(calculatorTool);
+```
+
+#### 2. **Servers are highly composable**
+- Each tool operates independently
+- Multiple tools combine seamlessly
+- Shared protocol enables interoperability
+- Modular design supports extensibility
+
+#### 3. **Servers cannot read whole conversation**
+- Server receives only tool execution requests
+- Full conversation history stays with the client/host
+- Each tool call is isolated
+- Cross-tool interactions controlled by client
+
+#### 4. **Progressive feature addition**
+- Core protocol provides minimal functionality
+- Additional capabilities negotiated as needed
+- Tools can be added/removed dynamically
+- Backwards compatibility maintained
+
+### Browser MCP Advantages
+
+#### **Performance Benefits**
+- **Zero Network Latency**: Direct function calls between components
+- **Shared Memory**: Efficient data sharing within browser context
+- **No Serialization Overhead**: Direct object passing vs JSON-RPC
+
+#### **Security Benefits**
+- **Sandboxed Environment**: Browser security model provides isolation
+- **No External Processes**: All components run in controlled environment
+- **Direct DOM Access**: Tools can interact with page elements securely
+
+#### **Development Benefits**
+- **Unified Debugging**: All components debuggable in browser dev tools
+- **Hot Reloading**: Development changes reflected immediately
+- **Rich Tooling**: Browser debugging and profiling capabilities
+
+### MCP vs Traditional Tool Calling
+
+| Aspect | Traditional Function Calling | MCP Implementation |
+|--------|------------------------------|-------------------|
+| **Architecture** | Direct LLM ↔ Functions | Host ↔ Client ↔ Server |
+| **Protocol** | Vendor-specific formats | Standardized MCP protocol |
+| **Capability Discovery** | Static tool definitions | Dynamic capability negotiation |
+| **Security** | Function-level isolation | Component-level boundaries |
+| **Extensibility** | Monolithic tool sets | Composable server ecosystem |
+| **Context Management** | LLM manages all context | Host coordinates context |
+
+### Future MCP Enhancements
+
+The browser MCP implementation provides a foundation for advanced features:
+
+#### **Multi-Server Support**
+```typescript
+// Potential for multiple MCP servers
+const fileServer = new FileMCPServer();
+const apiServer = new APIMCPServer(); 
+const dbServer = new DatabaseMCPServer();
+
+// Host manages multiple client connections
+host.addServer(fileServer);
+host.addServer(apiServer);
+host.addServer(dbServer);
+```
+
+#### **Resource Subscriptions**
+- Real-time updates from MCP servers
+- File system change notifications
+- API data stream subscriptions
+- Database change events
+
+#### **Prompt Templates**
+- Reusable prompt templates from servers
+- Dynamic prompt composition
+- Context-aware prompt selection
+
+This browser-based MCP implementation demonstrates how the Model Context Protocol can be adapted to different environments while maintaining its core architectural principles and benefits.
+
 ## 🔄 Agent Execution Flow
 
 ### High-Level System Flow
