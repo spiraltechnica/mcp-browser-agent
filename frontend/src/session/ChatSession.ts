@@ -8,6 +8,7 @@ import { LLMClient, Message, ToolCall } from '../llm/LLMClient';
 import { getConfig } from '../config/Configuration';
 import { getMCPTransport } from '../mcp/MCPTransport';
 import { MCPMethods } from '../mcp/MCPProtocol';
+import { getDebugEventManager } from '../debug/DebugEventManager';
 
 export interface SessionContext {
   messages: Message[];
@@ -112,6 +113,11 @@ export class ChatSession {
       throw new Error("Session is not active. Call start() first.");
     }
 
+    const debugManager = getDebugEventManager();
+    
+    // Start a new conversation flow in debug manager
+    const flowId = debugManager.startConversation(userMessage);
+
     try {
       this.log(`👤 User: ${userMessage}`);
       
@@ -123,9 +129,22 @@ export class ChatSession {
 
       // Get ALL tools for MCP standard format - LLM decides which to use
       const tools = this.toolManager.getToolsForMCP();
+      
+      // Add LLM request debug event
+      const requestStartTime = Date.now();
+      const requestPayload = {
+        messages: this.context.messages,
+        tools: tools.length > 0 ? tools : undefined
+      };
+      const requestEventId = debugManager.addLLMRequest(requestPayload);
+      
       const llmResponse = await this.llmClient.getResponse(this.context.messages, {
         tools: tools.length > 0 ? tools : undefined
       });
+      
+      // Add LLM response debug event
+      const requestDuration = Date.now() - requestStartTime;
+      debugManager.addLLMResponse(llmResponse, requestEventId, requestDuration);
       
       this.log(`🤖 LLM Response: ${llmResponse.content || 'Tool calls detected'}`);
       if (llmResponse.tool_calls && llmResponse.tool_calls.length > 0) {
@@ -141,12 +160,18 @@ export class ChatSession {
         content: result
       });
 
+      // Complete the conversation flow in debug manager
+      debugManager.completeConversation(result);
+
       // Keep message history manageable
       this.trimMessageHistory();
 
       return result;
 
     } catch (error) {
+      // Add error to debug manager
+      debugManager.addError(error instanceof Error ? error : new Error(String(error)));
+      
       this.handleError(error);
       const errorMessage = `I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`;
       
@@ -154,6 +179,9 @@ export class ChatSession {
         role: 'assistant',
         content: errorMessage
       });
+
+      // Complete the conversation flow with error
+      debugManager.completeConversation(errorMessage);
 
       return errorMessage;
     }
@@ -163,6 +191,8 @@ export class ChatSession {
    * Process LLM response using MCP standard format
    */
   private async processLLMResponseMCP(llmResponse: { content: string | null; tool_calls?: ToolCall[] }): Promise<string> {
+    const debugManager = getDebugEventManager();
+    
     try {
       // If there are tool calls, execute them
       if (llmResponse.tool_calls && llmResponse.tool_calls.length > 0) {
@@ -181,20 +211,40 @@ export class ChatSession {
         for (const toolCall of llmResponse.tool_calls) {
           this.log(`🔧 Executing tool via MCP: ${toolCall.function.name}`);
           
+          // Add tool call parsed event
+          debugManager.addToolCallParsed(toolCall);
+          
           let arguments_: any;
+          let executionStartTime = Date.now(); // Declare at the start of the loop
+          
           try {
             arguments_ = JSON.parse(toolCall.function.arguments);
           } catch (error) {
             this.log(`❌ Failed to parse tool arguments: ${toolCall.function.arguments}`);
             arguments_ = {};
+            debugManager.addError(new Error(`Failed to parse tool arguments: ${toolCall.function.arguments}`));
           }
 
           try {
-            // Call tool via JSON-RPC
-            const mcpResult = await transport.sendRequest(MCPMethods.TOOLS_CALL, {
+            // Prepare MCP request
+            const mcpRequest = {
               name: toolCall.function.name,
               arguments: arguments_
-            });
+            };
+            
+            // Add tool execution start event
+            executionStartTime = Date.now(); // Reset timing for actual execution
+            const executionEventId = debugManager.addToolExecution(
+              toolCall.function.name, 
+              mcpRequest, 
+              toolCall.id
+            );
+            
+            // Call tool via JSON-RPC
+            const mcpResult = await transport.sendRequest(MCPMethods.TOOLS_CALL, mcpRequest);
+
+            // Calculate execution duration
+            const executionDuration = Date.now() - executionStartTime;
 
             // Log the full MCP response for debugging
             this.log(`🔍 Full MCP response: ${JSON.stringify(mcpResult, null, 2)}`);
@@ -223,10 +273,20 @@ export class ChatSession {
               // No content array, check if there's any other data in the response
               if (mcpResult.isError) {
                 resultContent = `Tool execution failed: ${JSON.stringify(mcpResult, null, 2)}`;
+                success = false;
               } else {
                 resultContent = `Tool executed but returned no content: ${JSON.stringify(mcpResult, null, 2)}`;
               }
             }
+
+            // Add tool result event
+            debugManager.addToolResult(
+              toolCall.function.name,
+              success ? (mcpResult.content?.[0]?.data || resultContent) : resultContent,
+              success,
+              executionEventId,
+              executionDuration
+            );
 
             // Create tool message
             const toolMessage = this.llmClient.createToolMessage(
@@ -249,13 +309,28 @@ export class ChatSession {
             }
 
           } catch (error) {
-            this.log(`❌ MCP tool call failed: ${toolCall.function.name} - ${error instanceof Error ? error.message : 'Unknown error'}`);
+            const executionDuration = Date.now() - executionStartTime;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            
+            this.log(`❌ MCP tool call failed: ${toolCall.function.name} - ${errorMessage}`);
+            
+            // Add tool result error event
+            debugManager.addToolResult(
+              toolCall.function.name,
+              errorMessage,
+              false,
+              undefined,
+              executionDuration
+            );
+            
+            // Add general error event
+            debugManager.addError(error instanceof Error ? error : new Error(errorMessage));
             
             // Create error tool message
             const toolMessage = this.llmClient.createToolMessage(
               toolCall.id,
               toolCall.function.name,
-              `Error: ${error instanceof Error ? error.message : 'Tool execution failed'}`
+              `Error: ${errorMessage}`
             );
             
             this.context.messages.push(toolMessage);
@@ -264,9 +339,22 @@ export class ChatSession {
 
         // Get final response from LLM after tool execution
         const tools = this.toolManager.getToolsForMCP();
+        
+        // Add LLM request for follow-up
+        const followUpStartTime = Date.now();
+        const followUpRequestPayload = {
+          messages: this.context.messages,
+          tools: tools.length > 0 ? tools : undefined
+        };
+        const followUpRequestEventId = debugManager.addLLMRequest(followUpRequestPayload);
+        
         const finalResponse = await this.llmClient.getResponse(this.context.messages, {
           tools: tools.length > 0 ? tools : undefined
         });
+
+        // Add LLM response for follow-up
+        const followUpDuration = Date.now() - followUpStartTime;
+        debugManager.addLLMResponse(finalResponse, followUpRequestEventId, followUpDuration);
 
         this.log(`🔄 Final response: ${finalResponse.content || 'Additional tool calls detected'}`);
 
@@ -285,6 +373,7 @@ export class ChatSession {
 
     } catch (error) {
       this.log(`❌ Error processing MCP response: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      debugManager.addError(error instanceof Error ? error : new Error('Error processing MCP response'));
       return llmResponse.content || 'An error occurred while processing the response.';
     }
   }

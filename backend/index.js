@@ -19,41 +19,10 @@ if (!process.env.OPENAI_API_KEY) {
   process.exit(1);
 }
 
-// Helper function to extract JSON from text
-function extractJSONFromText(text) {
-  // Try to find JSON in markdown code blocks
-  const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-  if (codeBlockMatch) {
-    try {
-      return JSON.parse(codeBlockMatch[1]);
-    } catch (e) {
-      // Continue to other methods
-    }
-  }
-  
-  // Try to find JSON object in text
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      // Continue to fallback
-    }
-  }
-  
-  // Fallback decision
-  return {
-    action: "tool",
-    tool: "list_tools",
-    params: {},
-    delay: 3000,
-    reasoning: "Fallback decision due to JSON parsing failure"
-  };
-}
 
-// Enhanced LLM proxy endpoint with detailed logging and MCP function calling support
+// MCP-compatible LLM proxy endpoint with detailed logging and function calling support
 app.post("/api/llm", async (req, res) => {
-  const { prompt, messages, mode, model, temperature, max_tokens, tools, tool_choice, response_format } = req.body;
+  const { messages, model, temperature, max_tokens, tools, tool_choice, response_format } = req.body;
   const requestId = Math.random().toString(36).substr(2, 9);
   const startTime = Date.now();
   
@@ -89,34 +58,11 @@ app.post("/api/llm", async (req, res) => {
       console.log(`📝 [${requestId}] Response format: ${response_format.type}`);
     }
   }
-  // Handle legacy prompt-based requests (old autonomous system)
-  else if (prompt && typeof prompt === 'string') {
-    console.log(`📝 [${requestId}] Legacy prompt-based request`);
-    console.log(`📝 [${requestId}] Prompt length: ${prompt.length} characters`);
-    console.log(`📝 [${requestId}] Full prompt:\n${prompt}`);
-    
-    requestPayload = {
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content: "You are an intelligent agent that responds with valid JSON decisions. Always respond with properly formatted JSON that matches the requested schema. Be concise and decisive."
-        },
-        {
-          role: "user", 
-          content: prompt
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 300,
-      response_format: { type: "json_object" }
-    };
-  }
   // Invalid request
   else {
-    console.log(`❌ [${requestId}] Invalid request: either 'messages' array or 'prompt' string is required`);
+    console.log(`❌ [${requestId}] Invalid request: 'messages' array is required`);
     return res.status(400).json({ 
-      error: "Invalid request: either 'messages' array or 'prompt' string is required" 
+      error: "Invalid request: 'messages' array is required" 
     });
   }
 
@@ -151,65 +97,32 @@ app.post("/api/llm", async (req, res) => {
     });
     console.log(`🤖 [${requestId}] Raw response:\n${reply}`);
     
-    // Handle message-based requests (enhanced system) - return full OpenAI response
-    if (messages && Array.isArray(messages)) {
-      const choice = response.data.choices[0];
-      const message = choice.message;
-      
-      console.log(`💬 [${requestId}] Returning MCP-compatible response`);
-      
-      // Log function calls if present
-      if (message.tool_calls && message.tool_calls.length > 0) {
-        console.log(`🔧 [${requestId}] Function calls detected: ${message.tool_calls.length}`);
-        console.log(`🔧 [${requestId}] Tool calls:`, message.tool_calls.map(tc => tc.function.name));
-      }
-      
-      console.log(`⏱️ [${requestId}] Total request time: ${responseTime}ms\n`);
-      
-      // Return the full OpenAI response format for MCP compatibility
-      res.json({
-        choices: [{
-          message: {
-            role: message.role,
-            content: message.content,
-            tool_calls: message.tool_calls || undefined
-          },
-          finish_reason: choice.finish_reason
-        }],
-        usage: usage,
-        model: response.data.model
-      });
-      return;
+    const choice = response.data.choices[0];
+    const message = choice.message;
+    
+    console.log(`💬 [${requestId}] Returning MCP-compatible response`);
+    
+    // Log function calls if present
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      console.log(`🔧 [${requestId}] Function calls detected: ${message.tool_calls.length}`);
+      console.log(`🔧 [${requestId}] Tool calls:`, message.tool_calls.map(tc => tc.function.name));
     }
     
-    // Handle legacy prompt-based requests (old autonomous system) - parse JSON
-    let parsed;
-    try {
-      parsed = JSON.parse(reply);
-      console.log(`✅ [${requestId}] JSON parsed successfully:`, parsed);
-    } catch (parseError) {
-      console.log(`⚠️ [${requestId}] JSON parse failed: ${parseError.message}`);
-      console.log(`🔧 [${requestId}] Attempting JSON extraction...`);
-      parsed = extractJSONFromText(reply);
-      console.log(`🔧 [${requestId}] Extracted JSON:`, parsed);
-    }
-    
-    // Validate the parsed response has required fields
-    if (!parsed.action) {
-      console.log(`⚠️ [${requestId}] Response missing action field, using fallback`);
-      parsed = {
-        action: "tool",
-        tool: "list_tools",
-        params: {},
-        delay: 3000,
-        reasoning: "Fallback due to missing action field"
-      };
-    }
-    
-    console.log(`🎯 [${requestId}] Final decision:`, parsed);
     console.log(`⏱️ [${requestId}] Total request time: ${responseTime}ms\n`);
     
-    res.json(parsed);
+    // Return the full OpenAI response format for MCP compatibility
+    res.json({
+      choices: [{
+        message: {
+          role: message.role,
+          content: message.content,
+          tool_calls: message.tool_calls || undefined
+        },
+        finish_reason: choice.finish_reason
+      }],
+      usage: usage,
+      model: response.data.model
+    });
     
   } catch (err) {
     const responseTime = Date.now() - startTime;
@@ -252,15 +165,11 @@ app.post("/api/llm", async (req, res) => {
     
     console.error(`❌ [${requestId}] Final error: ${errorDetails}\n`);
     
-    // Return a fallback decision instead of just an error
+    // Return standard error response
     res.status(500).json({
       error: errorDetails,
       requestId: requestId,
-      responseTime: responseTime,
-      fallback: {
-        action: "stop",
-        reasoning: `LLM API error: ${errorDetails}`
-      }
+      responseTime: responseTime
     });
   }
 });
@@ -278,11 +187,7 @@ app.get("/api/health", (req, res) => {
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ 
-    error: "Internal server error",
-    fallback: {
-      action: "stop",
-      reasoning: "Server error occurred"
-    }
+    error: "Internal server error"
   });
 });
 

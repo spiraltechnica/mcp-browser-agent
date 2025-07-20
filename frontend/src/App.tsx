@@ -8,7 +8,9 @@ import {
 } from "./agent/EnhancedAgent";
 import { getEnhancedMCPServer } from "./server/EnhancedMCPServer";
 import { getLLMClient, LLMDebugInfo } from "./llm/LLMClient";
-import { LLMDebugPanel } from "./components/LLMDebugPanel";
+import { EnhancedDebugPanel, ConversationFlow } from "./components/EnhancedDebugPanel";
+import { getDebugEventManager } from "./debug/DebugEventManager";
+import { TokenUsageDisplay } from "./components/TokenUsageDisplay";
 import MultiAgentInterface from "./components/MultiAgentInterface";
 
 interface AgentStats {
@@ -35,6 +37,7 @@ function App() {
   const [chatHistory, setChatHistory] = useState<Array<{role: 'user' | 'assistant', content: string, timestamp: string}>>([]);
   const [isProcessingChat, setIsProcessingChat] = useState(false);
   const [debugHistory, setDebugHistory] = useState<LLMDebugInfo[]>([]);
+  const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
   const [isDebugPanelVisible, setIsDebugPanelVisible] = useState(false);
   
   // Refs for auto-scrolling
@@ -176,8 +179,26 @@ function App() {
     }
   }, [log]);
 
-  // Setup LLM debug callback
+  // Setup Enhanced Debug Event Manager
   useEffect(() => {
+    const debugManager = getDebugEventManager();
+    
+    // Subscribe to conversation flow updates
+    const unsubscribeFlow = debugManager.onFlow((flow: ConversationFlow) => {
+      setConversationFlows(prev => {
+        // Keep only last 20 flows
+        const newFlows = [...prev, flow];
+        if (newFlows.length > 20) {
+          newFlows.shift();
+        }
+        return newFlows;
+      });
+    });
+
+    // Load existing conversation flows
+    setConversationFlows(debugManager.getConversationFlows());
+
+    // Also keep the old LLM debug callback for backward compatibility
     const llmClient = getLLMClient();
     
     const handleDebugUpdate = (debugInfo: LLMDebugInfo) => {
@@ -192,12 +213,11 @@ function App() {
     };
 
     llmClient.setDebugCallback(handleDebugUpdate);
-    
-    // Load existing debug history
     setDebugHistory(llmClient.getDebugHistory());
 
     return () => {
-      // Clean up callback on unmount
+      // Clean up callbacks on unmount
+      unsubscribeFlow();
       llmClient.setDebugCallback(() => {});
     };
   }, []);
@@ -519,9 +539,9 @@ function App() {
         </form>
       </div>
 
-      {/* LLM Debug Panel */}
-      <LLMDebugPanel 
-        debugHistory={debugHistory}
+      {/* Enhanced Debug Panel */}
+      <EnhancedDebugPanel 
+        conversationFlows={conversationFlows}
         isVisible={isDebugPanelVisible}
         onToggle={handleToggleDebugPanel}
       />
@@ -589,6 +609,9 @@ function App() {
               🗑️ Clear Log
             </button>
           </div>
+
+          {/* Running Token Total */}
+          <TokenUsageDisplay style={{ marginBottom: '20px' }} />
 
           {/* Stats */}
           {stats && (

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { AgentManager, AgentInstance, createAgentManager } from "../agent/AgentManager";
+import { TokenUsageDisplay } from "./TokenUsageDisplay";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -757,6 +758,9 @@ function MultiAgentInterface({ onSwitchToSingleAgent }: MultiAgentInterfaceProps
 
             {/* Activity Log */}
             <div>
+              {/* Running Token Total */}
+              <TokenUsageDisplay compact style={{ marginBottom: '15px' }} />
+              
               <h3 style={{ color: '#1e293b', fontSize: '16px', marginBottom: '10px' }}>
                 Activity Log - {activeAgent.name}
               </h3>

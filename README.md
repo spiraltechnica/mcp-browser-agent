@@ -81,12 +81,30 @@ That's it! The agent is ready to use. Click "Start Agent" to begin interacting w
 
 ## 🏗️ Architecture
 
-The system uses a modern layered architecture with clear separation of concerns:
+This system implements a **complete Model Context Protocol (MCP) architecture** entirely within the browser - a pioneering approach that maintains full MCP compliance while leveraging browser capabilities for optimal performance.
+
+### Browser-Native MCP Implementation
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Frontend (React)                         │
 │                   Port: 3000                               │
+│              ┌─────────────────────────────┐                │
+│              │      MCP ARCHITECTURE       │                │
+│              │                             │                │
+│              │  ┌─────────┐  ┌───────────┐ │                │
+│              │  │   MCP   │◄─┤    MCP    │ │                │
+│              │  │  HOST   │  │  CLIENT   │ │                │
+│              │  │         │  │           │ │                │
+│              │  └─────────┘  └───────────┘ │                │
+│              │       │              │     │                │
+│              │       └──────┬───────┘     │                │
+│              │              │             │                │
+│              │       ┌─────────────┐      │                │
+│              │       │ MCP SERVER  │      │                │
+│              │       │             │      │                │
+│              │       └─────────────┘      │                │
+│              └─────────────────────────────┘                │
 └─────────────────────┬───────────────────────────────────────┘
                       │ Proxy /api requests
 ┌─────────────────────▼───────────────────────────────────────┐
@@ -95,15 +113,24 @@ The system uses a modern layered architecture with clear separation of concerns:
 │              Proxies to OpenAI API                         │
 └─────────────────────────────────────────────────────────────┘
 
-Frontend Components:
-├── Enhanced Agent System (agent/)
+MCP Components:
+├── MCP Host: Enhanced Agent System (agent/)
+├── MCP Client: Chat Session + LLM Client (session/, llm/)
+├── MCP Server: Tool & Resource Management (server/, tools/)
+├── Transport: In-Memory JSON-RPC Simulation (mcp/)
 ├── Multi-Agent Manager (components/)
-├── MCP Server Implementation (server/)
-├── Tool Management (tools/)
-├── LLM Client (llm/)
-├── Chat Session Management (session/)
 └── Configuration Management (config/)
 ```
+
+### MCP Protocol Compliance
+
+✅ **Full Architecture Compliance**: Implements the official Host ↔ Client ↔ Server pattern  
+✅ **Capability Negotiation**: Proper client/server capability exchange during initialization  
+✅ **Design Principles**: Adheres to all 4 core MCP design principles  
+✅ **Transport Innovation**: Uses optimized in-memory JSON-RPC simulation  
+✅ **Security Boundaries**: Maintains proper isolation between MCP components  
+✅ **Tool Discovery**: Dynamic tool registration and capability detection  
+✅ **Resource Management**: Structured resource exposure and access control
 
 ## 🏛️ MCP Architecture in the Browser
 
