@@ -107,9 +107,9 @@ Frontend Components:
 
 ## 🏛️ MCP Architecture in the Browser
 
-### True MCP Implementation
+### Complete MCP Implementation
 
-This system implements a **complete Model Context Protocol (MCP) architecture** entirely within the browser. Unlike traditional MCP deployments that span multiple processes, this innovative implementation runs all MCP components in a single browser context while maintaining proper architectural boundaries and protocol compliance.
+This system implements a **full Model Context Protocol (MCP) architecture** entirely within the browser, including proper JSON-RPC communication between all components. This is a true MCP implementation that follows the official specification while running in a browser environment.
 
 ### MCP Component Mapping
 
@@ -172,70 +172,55 @@ According to the [official MCP specification](https://modelcontextprotocol.io/sp
   - Maintains proper security constraints
   - Provides health monitoring and statistics
 
-### Browser-Specific MCP Implementation
+### JSON-RPC Implementation
 
-#### **Transport Adaptation**
-Traditional MCP uses JSON-RPC over stdio or HTTP between separate processes. Our browser implementation adapts this by:
-
-- **Direct Function Calls**: Client-server communication via JavaScript function calls
-- **Maintained Protocol**: Still follows MCP message patterns and capability negotiation
-- **Stateful Sessions**: Proper session management despite in-memory communication
-- **Security Boundaries**: Logical isolation between components
-
-#### **Capability Negotiation**
-The system implements proper MCP capability negotiation:
+The system now uses proper JSON-RPC communication between MCP components:
 
 ```typescript
-// Server capabilities declaration
-const serverInfo: MCPServerInfo = {
-  name: "browser-mcp-server",
-  version: "1.0.0", 
-  protocolVersion: "2025-11-05",
-  capabilities: {
-    tools: { listChanged: true },
-    resources: { subscribe: true, listChanged: true }
-  }
-};
+// JSON-RPC initialization
+await transport.sendRequest(MCPMethods.INITIALIZE, {
+  protocolVersion: "2025-06-18",
+  capabilities: { tools: {}, sampling: {} },
+  clientInfo: { name: "mcp-browser-client", version: "1.0.0" }
+});
 
-// Client capability handling
-const tools = this.toolManager.getToolsForMCP();
-const llmResponse = await this.llmClient.getResponse(messages, {
-  tools: tools.length > 0 ? tools : undefined
+// JSON-RPC tool calls
+const mcpResult = await transport.sendRequest(MCPMethods.TOOLS_CALL, {
+  name: toolCall.function.name,
+  arguments: arguments_
 });
 ```
 
-#### **MCP Protocol Flow in Browser**
-
-```mermaid
-sequenceDiagram
-    participant Host as MCP Host<br/>(React App)
-    participant Client as MCP Client<br/>(ChatSession)
-    participant Server as MCP Server<br/>(EnhancedMCPServer)
-    participant LLM as LLM<br/>(via Backend)
-
-    Host->>Client: Initialize MCP client
-    Client->>Server: Initialize session with capabilities
-    Server-->>Client: Respond with server capabilities
-    
-    Host->>Client: User message
-    Client->>Server: List available tools
-    Server-->>Client: Tool definitions
-    Client->>LLM: Request with tools
-    LLM-->>Client: Response with tool calls
-    
-    loop Tool Execution
-        Client->>Server: Call tool(name, args)
-        Server-->>Client: Tool result
-    end
-    
-    Client->>LLM: Final request with tool results
-    LLM-->>Client: Natural language response
-    Client-->>Host: Final response
+#### **JSON-RPC Server Handler**
+```typescript
+// Server message handling
+async handleJsonRpcMessage(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+  switch (request.method) {
+    case MCPMethods.INITIALIZE:
+      return await this.handleInitialize(request);
+    case MCPMethods.TOOLS_LIST:
+      return await this.handleToolsList(request);
+    case MCPMethods.TOOLS_CALL:
+      return await this.handleToolsCall(request);
+  }
+}
 ```
+
+#### **Transport Implementation**
+- **In-Memory JSON-RPC**: Simulates proper JSON-RPC with serialization/deserialization
+- **Request/Response Correlation**: Unique request IDs for proper message matching
+- **Error Handling**: Standard JSON-RPC error codes and MCP-specific errors
+- **Comprehensive Logging**: Full request/response logging for debugging
+
+#### **MCP Protocol Compliance**
+- **Standard Methods**: Uses official MCP method names (`initialize`, `tools/list`, `tools/call`)
+- **Capability Negotiation**: Proper client/server capability exchange
+- **Protocol Version**: Correct "2025-06-18" version from official specification
+- **Error Codes**: Standard JSON-RPC and MCP-specific error handling
 
 ### MCP Design Principles Compliance
 
-Our implementation adheres to all core MCP design principles:
+The implementation already adheres to all core MCP design principles:
 
 #### 1. **Servers are extremely easy to build**
 ```typescript
@@ -273,9 +258,9 @@ mcpServer.registerTool(calculatorTool);
 ### Browser MCP Advantages
 
 #### **Performance Benefits**
-- **Zero Network Latency**: Direct function calls between components
+- **Zero Network Latency**: In-memory JSON-RPC between components
 - **Shared Memory**: Efficient data sharing within browser context
-- **No Serialization Overhead**: Direct object passing vs JSON-RPC
+- **Minimal Serialization Overhead**: In-memory JSON-RPC simulation maintains performance
 
 #### **Security Benefits**
 - **Sandboxed Environment**: Browser security model provides isolation
@@ -298,13 +283,11 @@ mcpServer.registerTool(calculatorTool);
 | **Extensibility** | Monolithic tool sets | Composable server ecosystem |
 | **Context Management** | LLM manages all context | Host coordinates context |
 
-### Future MCP Enhancements
-
-The browser MCP implementation provides a foundation for advanced features:
+### Future Enhancements
 
 #### **Multi-Server Support**
 ```typescript
-// Potential for multiple MCP servers
+// Multiple MCP servers
 const fileServer = new FileMCPServer();
 const apiServer = new APIMCPServer(); 
 const dbServer = new DatabaseMCPServer();
@@ -315,18 +298,13 @@ host.addServer(apiServer);
 host.addServer(dbServer);
 ```
 
-#### **Resource Subscriptions**
-- Real-time updates from MCP servers
-- File system change notifications
-- API data stream subscriptions
-- Database change events
+#### **Advanced MCP Features**
+- **Resource Subscriptions**: Real-time updates from MCP servers
+- **Prompt Templates**: Reusable prompt templates from servers
+- **Sampling**: Server-initiated LLM requests
+- **Notifications**: Server-to-client event streaming
 
-#### **Prompt Templates**
-- Reusable prompt templates from servers
-- Dynamic prompt composition
-- Context-aware prompt selection
-
-This browser-based MCP implementation demonstrates how the Model Context Protocol can be adapted to different environments while maintaining its core architectural principles and benefits.
+This browser-based implementation demonstrates a complete MCP architecture that maintains all the core benefits of composability, security, and extensibility while running entirely in the browser environment.
 
 ## 🔄 Agent Execution Flow
 
@@ -339,16 +317,27 @@ sequenceDiagram
     participant User as User Interface
     participant Agent as Enhanced Agent
     participant Session as Chat Session
+    participant Transport as MCP Transport
+    participant Server as MCP Server
     participant LLM as LLM Client
-    participant Tools as Tool Manager
     participant Backend as Backend Proxy
     participant OpenAI as OpenAI API
 
     User->>Agent: Send Message
     Agent->>Session: processMessage()
-    Session->>Session: Add to conversation history
-    Session->>Tools: getToolsForMCP()
-    Tools-->>Session: Available tools array
+    
+    Note over Session,Server: MCP Initialization (if needed)
+    Session->>Transport: sendRequest(INITIALIZE)
+    Transport->>Server: handleJsonRpcMessage(INITIALIZE)
+    Server-->>Transport: JSON-RPC response with capabilities
+    Transport-->>Session: MCP server info
+    
+    Session->>Session: Add user message to conversation
+    Session->>Transport: sendRequest(TOOLS_LIST)
+    Transport->>Server: handleJsonRpcMessage(TOOLS_LIST)
+    Server-->>Transport: JSON-RPC response with tools
+    Transport-->>Session: Available tools array
+    
     Session->>LLM: getResponse(messages, tools)
     LLM->>Backend: POST /api/llm
     Backend->>OpenAI: Chat Completions API
@@ -357,9 +346,15 @@ sequenceDiagram
     LLM-->>Session: Parsed response
     
     alt Tool calls detected
-        Session->>Tools: executeTool(name, args)
-        Tools-->>Session: Tool results
-        Session->>Session: Add tool results to conversation
+        loop For each tool call
+            Session->>Transport: sendRequest(TOOLS_CALL, {name, args})
+            Transport->>Server: handleJsonRpcMessage(TOOLS_CALL)
+            Server->>Server: Execute tool via ToolManager
+            Server-->>Transport: JSON-RPC response with MCP content
+            Transport-->>Session: MCP tool result
+            Session->>Session: Add tool result to conversation
+        end
+        
         Session->>LLM: getResponse() for final answer
         LLM->>Backend: POST /api/llm
         Backend->>OpenAI: Chat Completions API
@@ -387,10 +382,25 @@ await agent.processMessage("Calculate sqrt(16) + 5")
 - Build system prompt with available tools
 - Prepare messages array for LLM
 
-#### 3. **Tool Discovery** (`ToolManager.getToolsForMCP()`)
-- Convert all available tools to OpenAI function format
-- Include tool schemas and descriptions
-- Return tools array for LLM decision-making
+#### 3. **Tool Discovery via JSON-RPC**
+```typescript
+// Get tools via JSON-RPC
+const transport = getMCPTransport();
+const toolsResponse = await transport.sendRequest(MCPMethods.TOOLS_LIST);
+
+// Convert MCP tools to OpenAI function format
+const tools = toolsResponse.tools.map(tool => ({
+  type: "function",
+  function: {
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.inputSchema
+  }
+}));
+```
+- Request tools from MCP server via JSON-RPC
+- Convert MCP tool format to OpenAI function format
+- Include tool schemas and descriptions for LLM decision-making
 
 #### 4. **LLM Communication** (`LLMClient.getResponse()`)
 ```typescript
@@ -445,21 +455,40 @@ The system follows OpenAI's Chat Completions API format:
 }
 ```
 
-#### 6. **Tool Execution** (`processLLMResponseMCP()`)
+#### 6. **Tool Execution via JSON-RPC** (`processLLMResponseMCP()`)
 ```typescript
-// Execute each tool call
+// Execute each tool call via JSON-RPC
+const transport = getMCPTransport();
+
 for (const toolCall of llmResponse.tool_calls) {
-  const result = await this.toolManager.executeTool(
-    toolCall.function.name, 
-    JSON.parse(toolCall.function.arguments)
-  );
-  
+  let arguments_: any;
+  try {
+    arguments_ = JSON.parse(toolCall.function.arguments);
+  } catch (error) {
+    arguments_ = {};
+  }
+
+  // Call tool via JSON-RPC
+  const mcpResult = await transport.sendRequest(MCPMethods.TOOLS_CALL, {
+    name: toolCall.function.name,
+    arguments: arguments_
+  });
+
+  // Extract result from MCP response format
+  let resultContent: string;
+  if (mcpResult.content && mcpResult.content.length > 0) {
+    const contentItem = mcpResult.content[0];
+    resultContent = contentItem.text || JSON.stringify(contentItem.data, null, 2);
+  } else {
+    resultContent = mcpResult.isError ? 'Tool execution failed' : 'Tool executed successfully';
+  }
+
   // Add tool result to conversation
   const toolMessage = {
     role: 'tool',
     tool_call_id: toolCall.id,
     name: toolCall.function.name,
-    content: JSON.stringify(result.data)
+    content: resultContent
   };
   
   this.context.messages.push(toolMessage);
