@@ -6,6 +6,8 @@
 import { ToolManager } from '../tools/ToolManager';
 import { LLMClient, Message, ToolCall } from '../llm/LLMClient';
 import { getConfig } from '../config/Configuration';
+import { getMCPTransport } from '../mcp/MCPTransport';
+import { MCPMethods } from '../mcp/MCPProtocol';
 
 export interface SessionContext {
   messages: Message[];
@@ -68,15 +70,32 @@ export class ChatSession {
     this.log("🚀 Chat session starting...");
 
     try {
+      // Initialize MCP connection
+      const transport = getMCPTransport();
+      await transport.sendRequest(MCPMethods.INITIALIZE, {
+        protocolVersion: "2025-06-18",
+        capabilities: { tools: {}, sampling: {} },
+        clientInfo: {
+          name: "mcp-browser-client",
+          version: "1.0.0",
+          capabilities: { tools: {}, sampling: {} }
+        }
+      });
+
+      this.log("✅ MCP connection initialized");
+
       // Build system prompt with available tools
-      const systemPrompt = this.buildSystemPrompt();
+      const systemPrompt = await this.buildSystemPrompt();
       this.context.messages.push({
         role: 'system',
         content: systemPrompt
       });
 
       this.log("✅ Chat session initialized with system prompt");
-      this.log(`🔧 Available tools: ${this.toolManager.getToolCount()}`);
+
+      // Get tool count via JSON-RPC
+      const toolsResponse = await transport.sendRequest(MCPMethods.TOOLS_LIST);
+      this.log(`🔧 Available tools: ${toolsResponse.tools.length}`);
 
     } catch (error) {
       this.handleError(error);
@@ -156,9 +175,11 @@ export class ChatSession {
           tool_calls: llmResponse.tool_calls
         });
 
-        // Execute each tool call and add tool messages
+        // Execute each tool call via JSON-RPC and add tool messages
+        const transport = getMCPTransport();
+        
         for (const toolCall of llmResponse.tool_calls) {
-          this.log(`🔧 Executing tool: ${toolCall.function.name}`);
+          this.log(`🔧 Executing tool via MCP: ${toolCall.function.name}`);
           
           let arguments_: any;
           try {
@@ -168,22 +189,76 @@ export class ChatSession {
             arguments_ = {};
           }
 
-          const toolResult = await this.toolManager.executeTool(toolCall.function.name, arguments_);
-          
-          // Create tool message
-          const toolMessage = this.llmClient.createToolMessage(
-            toolCall.id,
-            toolCall.function.name,
-            toolResult.success ? JSON.stringify(toolResult.data) : `Error: ${toolResult.error}`
-          );
-          
-          this.context.messages.push(toolMessage);
-          
-          if (toolResult.success) {
-            this.log(`✅ Tool execution successful: ${toolCall.function.name}`);
-            this.context.lastToolResults.set(toolCall.function.name, toolResult.data);
-          } else {
-            this.log(`❌ Tool execution failed: ${toolCall.function.name} - ${toolResult.error}`);
+          try {
+            // Call tool via JSON-RPC
+            const mcpResult = await transport.sendRequest(MCPMethods.TOOLS_CALL, {
+              name: toolCall.function.name,
+              arguments: arguments_
+            });
+
+            // Log the full MCP response for debugging
+            this.log(`🔍 Full MCP response: ${JSON.stringify(mcpResult, null, 2)}`);
+
+            // Extract result from MCP response format
+            let resultContent: string;
+            let success = !mcpResult.isError;
+            
+            if (mcpResult.content && mcpResult.content.length > 0) {
+              // Try to get the most detailed content available
+              const contentItem = mcpResult.content[0];
+              
+              if (contentItem.text) {
+                resultContent = contentItem.text;
+              } else if (contentItem.data) {
+                resultContent = JSON.stringify(contentItem.data, null, 2);
+              } else {
+                resultContent = JSON.stringify(contentItem, null, 2);
+              }
+              
+              // Store successful results
+              if (success && contentItem.data) {
+                this.context.lastToolResults.set(toolCall.function.name, contentItem.data);
+              }
+            } else {
+              // No content array, check if there's any other data in the response
+              if (mcpResult.isError) {
+                resultContent = `Tool execution failed: ${JSON.stringify(mcpResult, null, 2)}`;
+              } else {
+                resultContent = `Tool executed but returned no content: ${JSON.stringify(mcpResult, null, 2)}`;
+              }
+            }
+
+            // Create tool message
+            const toolMessage = this.llmClient.createToolMessage(
+              toolCall.id,
+              toolCall.function.name,
+              resultContent
+            );
+            
+            this.context.messages.push(toolMessage);
+            
+            if (success) {
+              this.log(`✅ MCP tool execution successful: ${toolCall.function.name}`);
+              this.log(`📋 Tool result preview: ${resultContent.substring(0, 300)}${resultContent.length > 300 ? '...' : ''}`);
+            } else {
+              this.log(`❌ MCP tool execution failed: ${toolCall.function.name}`);
+              this.log(`🔍 Full error details: ${resultContent}`);
+              
+              // Add error to session context for tracking
+              this.context.errors.push(`Tool ${toolCall.function.name}: ${resultContent}`);
+            }
+
+          } catch (error) {
+            this.log(`❌ MCP tool call failed: ${toolCall.function.name} - ${error instanceof Error ? error.message : 'Unknown error'}`);
+            
+            // Create error tool message
+            const toolMessage = this.llmClient.createToolMessage(
+              toolCall.id,
+              toolCall.function.name,
+              `Error: ${error instanceof Error ? error.message : 'Tool execution failed'}`
+            );
+            
+            this.context.messages.push(toolMessage);
           }
         }
 

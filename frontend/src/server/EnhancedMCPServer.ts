@@ -1,12 +1,25 @@
 /**
  * Enhanced MCP Server following the Python implementation pattern
  * Integrates with the new architecture components
+ * Now supports JSON-RPC communication for true MCP compliance
  */
 
 import { getConfig } from '../config/Configuration';
 import { ToolManager, getToolManager } from '../tools/ToolManager';
 import { Tool } from '../tools/Tool';
 import { enhancedTools } from '../tools/EnhancedTools';
+import { 
+  JsonRpcRequest, 
+  JsonRpcResponse, 
+  MCPMethods, 
+  MCPErrorCodes,
+  InitializeRequest,
+  InitializeResponse,
+  ToolsListResponse,
+  ToolCallRequest,
+  ToolCallResponse
+} from '../mcp/MCPProtocol';
+import { getMCPTransport } from '../mcp/MCPTransport';
 
 export interface MCPCapabilities {
   tools?: {
@@ -60,6 +73,167 @@ export class EnhancedMCPServer {
     this.toolManager.onToolsChanged(() => {
       this.notifyListeners();
     });
+
+    // Set up JSON-RPC transport
+    this.setupJsonRpcTransport();
+  }
+
+  /**
+   * Set up JSON-RPC transport for MCP communication
+   */
+  private setupJsonRpcTransport(): void {
+    const transport = getMCPTransport();
+    transport.setMessageHandler(this.handleJsonRpcMessage.bind(this));
+  }
+
+  /**
+   * Handle incoming JSON-RPC messages
+   */
+  async handleJsonRpcMessage(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+    try {
+      console.log(`📨 MCP Server received: ${request.method}`);
+
+      switch (request.method) {
+        case MCPMethods.INITIALIZE:
+          return await this.handleInitialize(request);
+        
+        case MCPMethods.TOOLS_LIST:
+          return await this.handleToolsList(request);
+        
+        case MCPMethods.TOOLS_CALL:
+          return await this.handleToolsCall(request);
+        
+        default:
+          return {
+            jsonrpc: "2.0",
+            id: request.id,
+            error: {
+              code: MCPErrorCodes.METHOD_NOT_FOUND,
+              message: `Method not found: ${request.method}`
+            }
+          };
+      }
+
+    } catch (error) {
+      console.error(`❌ Error handling JSON-RPC message:`, error);
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: MCPErrorCodes.INTERNAL_ERROR,
+          message: error instanceof Error ? error.message : 'Internal server error'
+        }
+      };
+    }
+  }
+
+  /**
+   * Handle initialize request
+   */
+  private async handleInitialize(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+    try {
+      const params = request.params as InitializeRequest;
+      
+      // Initialize server if not already done
+      if (!this.initialized) {
+        await this.initialize();
+      }
+
+      const response: InitializeResponse = {
+        protocolVersion: "2025-06-18",
+        capabilities: this.serverInfo.capabilities,
+        serverInfo: this.serverInfo
+      };
+
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        result: response
+      };
+
+    } catch (error) {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: MCPErrorCodes.INITIALIZATION_FAILED,
+          message: error instanceof Error ? error.message : 'Initialization failed'
+        }
+      };
+    }
+  }
+
+  /**
+   * Handle tools/list request
+   */
+  private async handleToolsList(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+    try {
+      const tools = await this.listTools();
+      
+      const response: ToolsListResponse = {
+        tools: tools.map(tool => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema
+        }))
+      };
+
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        result: response
+      };
+
+    } catch (error) {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: MCPErrorCodes.INTERNAL_ERROR,
+          message: error instanceof Error ? error.message : 'Failed to list tools'
+        }
+      };
+    }
+  }
+
+  /**
+   * Handle tools/call request
+   */
+  private async handleToolsCall(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+    try {
+      const params = request.params as ToolCallRequest;
+      
+      if (!this.toolManager.hasTool(params.name)) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: MCPErrorCodes.TOOL_NOT_FOUND,
+            message: `Tool not found: ${params.name}`
+          }
+        };
+      }
+
+      const result = await this.callTool(params.name, params.arguments);
+      
+      const response: ToolCallResponse = result;
+
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        result: response
+      };
+
+    } catch (error) {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: MCPErrorCodes.TOOL_EXECUTION_ERROR,
+          message: error instanceof Error ? error.message : 'Tool execution failed'
+        }
+      };
+    }
   }
 
   /**
